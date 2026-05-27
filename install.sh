@@ -5,8 +5,9 @@
 #   piped remotely:  curl -fsSL .../install.sh | bash   (fetches statusline.sh)
 set -euo pipefail
 
-# Pinned release ref; fetch mode pulls statusline.sh from this tag (bump on each release).
-REF="v1.0.0"
+# Moving major tag; fetch mode always pulls the latest v1.x release (the release
+# workflow force-moves this tag on each release). Pin a vX.Y.Z tag for a fixed version.
+REF="v1"
 RAW_BASE="https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/$REF"
 
 if ! command -v jq >/dev/null 2>&1; then
