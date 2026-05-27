@@ -36,7 +36,16 @@ try {
     function Format-RateTuple($window, $windowHours, $label) {
         if ($null -eq $window -or $null -eq $window.used_percentage) { return $null }
         $remaining    = [int][math]::Ceiling(100 - $window.used_percentage)
-        $secLeft      = [math]::Max(0, [int64]$window.resets_at - $nowEpoch)
+        # resets_at may be absent/null (the rate_limits object and each window are
+        # omitted until the first API response) or point at a just-passed boundary.
+        # Only compute a pace estimate when it is a usable future timestamp;
+        # otherwise show the bare remaining %. Guards the bogus "~0%" that a
+        # missing/past resets_at (coerced to 0 by [int64]$null) would produce.
+        $resetsAt     = if ($null -ne $window.resets_at) { [int64]$window.resets_at } else { 0 }
+        $secLeft      = $resetsAt - $nowEpoch
+        if ($secLeft -le 0) {
+            return '{0}:{1}%' -f $label, $remaining
+        }
         $windowSecs   = $windowHours * 3600.0
         $elapsed      = $windowSecs - $secLeft
         $expUsed      = [math]::Max(0, [math]::Min(100, ($elapsed / $windowSecs) * 100))
