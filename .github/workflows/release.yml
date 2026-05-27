@@ -1,0 +1,91 @@
+name: release
+
+# Every merge to main cuts a release. Conventional-commit subjects since the last
+# vX.Y.Z tag decide the bump level (breaking -> major, feat -> minor, else patch),
+# then the major alias tag (v1) is force-moved to the new release so installers can
+# track "latest within the major line" without a pinned version slug.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next version
+        id: ver
+        run: |
+          set -euo pipefail
+          git fetch --tags --force --quiet
+
+          # Latest real version tag (vX.Y.Z); the moving alias (v1) has no dots so the
+          # glob excludes it. Empty on a fresh repo -> start counting from v0.0.0.
+          last="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+          if [ -z "$last" ]; then
+            last="v0.0.0"
+            range="HEAD"
+          else
+            range="${last}..HEAD"
+          fi
+
+          IFS=. read -r major minor patch <<< "${last#v}"
+
+          # Always release; conventional commits only decide how big the bump is.
+          subjects="$(git log --format='%s%n%b' $range)"
+          level="patch"
+          if printf '%s\n' "$subjects" | grep -qE '(^[a-zA-Z]+(\([^)]*\))?!:|BREAKING[ -]CHANGE)'; then
+            level="major"
+          elif printf '%s\n' "$subjects" | grep -qE '^feat(\([^)]*\))?:'; then
+            level="minor"
+          fi
+
+          case "$level" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          next="v${major}.${minor}.${patch}"
+          echo "last=$last  bump=$level  next=$next"
+          {
+            echo "version=$next"
+            echo "major=v${major}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version='${{ steps.ver.outputs.version }}'
+          major='${{ steps.ver.outputs.major }}'
+
+          # Idempotency guard: if this version tag already exists, a prior run made it.
+          if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
+            echo "${version} already exists; nothing to do."
+            exit 0
+          fi
+
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # Precise version tag, then (re)point the major alias at the same commit.
+          git tag -a "${version}" -m "${version}"
+          git push origin "${version}"
+          git tag -f -a "${major}" -m "${major} -> ${version}"
+          git push -f origin "${major}"
+
+          gh release create "${version}" --title "${version}" --generate-notes
