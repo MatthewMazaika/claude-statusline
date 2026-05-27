@@ -5,7 +5,9 @@
 #   piped remotely:  curl -fsSL .../install.sh | bash   (fetches statusline.sh)
 set -euo pipefail
 
-RAW_BASE="https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/main"
+# Pinned release ref; fetch mode pulls statusline.sh from this tag (bump on each release).
+REF="v1.0.0"
+RAW_BASE="https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/$REF"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "Error: jq is required but was not found on PATH." >&2

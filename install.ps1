@@ -4,7 +4,9 @@
 #   piped remotely:  irm .../install.ps1 | iex     (fetches statusline.ps1)
 $ErrorActionPreference = 'Stop'
 
-$rawBase = 'https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/main'
+# Pinned release ref; fetch mode pulls statusline.ps1 from this tag (bump on each release).
+$ref = 'v1.0.0'
+$rawBase = "https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/$ref"
 
 $claudeDir = Join-Path $env:USERPROFILE '.claude'
 if (-not (Test-Path $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir | Out-Null }
