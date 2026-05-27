@@ -17,7 +17,7 @@ code/cloudflare-telegram-proxy | sonnet-4-6 | 12k/200k | 5h:84%~68% | 1W:36%~29%
 **Linux / macOS**
 
 ```bash
-git clone https://github.com/NetfallNetworks/claude-statusline.git
+git clone https://github.com/MatthewMazaika/claude-statusline.git
 cd claude-statusline
 bash install.sh
 ```
@@ -25,7 +25,7 @@ bash install.sh
 **Windows (PowerShell)**
 
 ```powershell
-git clone https://github.com/NetfallNetworks/claude-statusline.git
+git clone https://github.com/MatthewMazaika/claude-statusline.git
 cd claude-statusline
 .\install.ps1
 ```
