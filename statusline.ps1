@@ -61,7 +61,7 @@ try {
     $parts += $modelStr
     $parts += $ctxStr
     $fhStr = Format-RateTuple $obj.rate_limits.five_hour  5   '5h'
-    $wkStr = Format-RateTuple $obj.rate_limits.seven_day  168 '1W'
+    $wkStr = Format-RateTuple $obj.rate_limits.seven_day  168 '7d'
     if ($fhStr) { $parts += $fhStr }
     if ($wkStr) { $parts += $wkStr }
 
