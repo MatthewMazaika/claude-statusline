@@ -48,7 +48,7 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
   | ( (.model.id // "") | sub("^claude-"; "") ) as $model
   | ( (.context_window.total_input_tokens | fmt) + "/" + (.context_window.context_window_size | fmt) ) as $ctx
   | ratetuple(.rate_limits.five_hour; 5;   "5h") as $fh
-  | ratetuple(.rate_limits.seven_day; 168; "1W") as $wk
+  | ratetuple(.rate_limits.seven_day; 168; "7d") as $wk
   | ( (if $dir != "" then [$dir] else [] end) + [$model, $ctx]
       + (if $fh != null then [$fh] else [] end)
       + (if $wk != null then [$wk] else [] end) )
