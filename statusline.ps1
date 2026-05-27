@@ -1,0 +1,62 @@
+$ErrorActionPreference = 'Continue'
+try {
+    $raw = [Console]::In.ReadToEnd()
+    if (-not $raw.Trim()) { return }
+    $obj = $raw | ConvertFrom-Json
+
+    # now (epoch seconds): test override or real UTC
+    if ($env:CLAUDE_STATUSLINE_NOW) {
+        $nowEpoch = [int64]$env:CLAUDE_STATUSLINE_NOW
+    } else {
+        $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    }
+
+    # workspace: last 2 path segments of cwd, forward-slash normalized
+    $dirStr = ''
+    if ($obj.cwd) {
+        $segs = ($obj.cwd -replace '\\', '/') -split '/' | Where-Object { $_ -ne '' }
+        if ($segs.Count -ge 2) { $dirStr = '{0}/{1}' -f $segs[-2], $segs[-1] }
+        elseif ($segs.Count -eq 1) { $dirStr = $segs[0] }
+    }
+
+    # model
+    $modelStr = $obj.model.id -replace '^claude-', ''
+
+    # token formatter (round half away from zero for cross-platform parity)
+    function Format-Tokens($n) {
+        $v = [double]$n
+        if ($v -ge 1000000) { return ('{0:0.0}M' -f [math]::Round($v / 1000000, 1, [MidpointRounding]::AwayFromZero)) }
+        if ($v -ge 1000)    { return ('{0}k'     -f [int][math]::Round($v / 1000, 0, [MidpointRounding]::AwayFromZero)) }
+        return "$([int]$v)"
+    }
+    $ctxStr = '{0}/{1}' -f (Format-Tokens $obj.context_window.total_input_tokens),
+                             (Format-Tokens $obj.context_window.context_window_size)
+
+    # rate-limit tuple: label:remaining%~expectedRemaining% (omit ~expected within 3%)
+    function Format-RateTuple($window, $windowHours, $label) {
+        if ($null -eq $window -or $null -eq $window.used_percentage) { return $null }
+        $remaining    = [int][math]::Ceiling(100 - $window.used_percentage)
+        $secLeft      = [math]::Max(0, [int64]$window.resets_at - $nowEpoch)
+        $windowSecs   = $windowHours * 3600.0
+        $elapsed      = $windowSecs - $secLeft
+        $expUsed      = [math]::Max(0, [math]::Min(100, ($elapsed / $windowSecs) * 100))
+        $expRemaining = [int][math]::Round(100 - $expUsed, [MidpointRounding]::AwayFromZero)
+        if ([math]::Abs($remaining - $expRemaining) -ge 3) {
+            return '{0}:{1}%~{2}%' -f $label, $remaining, $expRemaining
+        }
+        return '{0}:{1}%' -f $label, $remaining
+    }
+
+    $parts = @()
+    if ($dirStr) { $parts += $dirStr }
+    $parts += $modelStr
+    $parts += $ctxStr
+    $fhStr = Format-RateTuple $obj.rate_limits.five_hour  5   '5h'
+    $wkStr = Format-RateTuple $obj.rate_limits.seven_day  168 '1W'
+    if ($fhStr) { $parts += $fhStr }
+    if ($wkStr) { $parts += $wkStr }
+
+    Write-Output ($parts -join ' | ')
+} catch {
+    Write-Output "statusline err: $($_.Exception.Message)"
+}
