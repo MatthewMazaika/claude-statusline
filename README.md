@@ -1,11 +1,26 @@
 # claude-statusline
 
-A minimal, cross-platform [Claude Code](https://claude.com/claude-code) status line.
-Identical output on Windows (PowerShell), Linux, and macOS (bash + `jq`):
+Know exactly where you stand with Claude Code, on one line, before you hit a limit.
 
 ```
-code/cloudflare-telegram-proxy | sonnet-4-6 | 12k/200k | 5h:84%~68% | 1W:36%~29%
+code/my-project | sonnet-4-6 | 12k/200k | 5h:84%~68% | 7d:36%~29%
 ```
+
+Reading left to right: the directory you're working in, the model, context used against the
+window, then your 5-hour and weekly usage. Each usage field pairs what's left with a pace
+estimate, so a glance tells you whether you're ahead or behind — instead of hitting a limit
+mid-task with no warning.
+
+## Why you'll want it
+
+- See the cap coming. Pro and Max usage is metered over a rolling 5-hour window and a rolling
+  weekly window; keeping both in view lets you pace the work instead of discovering the limit
+  mid-task.
+- Pace, not just a number. `7d:36%~29%`: 36% of your weekly limit is left, 29% of the week to go.
+  More of your limit left than the week means you're coasting; less and you're burning hot.
+- The same line everywhere. Identical output on Windows, Linux, and macOS, with `jq` the only
+  dependency. No Node, no runtime.
+- One line to install.
 
 ## Prerequisites
 
@@ -14,7 +29,7 @@ code/cloudflare-telegram-proxy | sonnet-4-6 | 12k/200k | 5h:84%~68% | 1W:36%~29%
 
 ## Install
 
-**Quick install** — one line, fetches the script straight from GitHub:
+Quick install — one line, fetches the script straight from GitHub.
 
 Linux / macOS
 
@@ -28,7 +43,7 @@ Windows (PowerShell)
 irm https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/main/install.ps1 | iex
 ```
 
-**Clone instead** — if you'd rather read the code first and keep a local copy to `git pull`:
+Clone instead — if you'd rather read the code first and keep a local copy to `git pull`.
 
 Linux / macOS
 
@@ -51,7 +66,7 @@ Either way the installer drops the script in `~/.claude/` and adds a `statusLine
 
 ## Update
 
-Cloned? Pull and re-run the installer:
+Cloned? Pull and re-run the installer.
 
 Linux / macOS
 
@@ -71,11 +86,11 @@ Used the one-liner? Just run it again.
 
 | Field | Source | Notes |
 |-------|--------|-------|
-| `code/cloudflare-telegram-proxy` | `cwd` last 2 path segments | forward-slash normalized |
+| `code/my-project` | your current working directory | last 2 path segments, forward-slash normalized |
 | `sonnet-4-6` | `model.id` with `claude-` stripped | |
 | `12k/200k` | `context_window.total_input_tokens` / `context_window_size` | abbreviated k / M |
-| `5h:84%~68%` | `rate_limits.five_hour` | `remaining%~expected%`; `~expected` omitted within ±3% |
-| `1W:36%~29%` | `rate_limits.seven_day` | same, over a 168h window |
+| `5h:84%~68%` | `rate_limits.five_hour` | Your 5-hour limit: how much you have left, then how much of the window is left — even spending keeps the two equal. The `~` figure disappears when they're within 3%. |
+| `7d:36%~29%` | `rate_limits.seven_day` | Your weekly limit: how much you have left, then how much of the week is left — even spending keeps the two equal. The `~` figure disappears when they're within 3%. |
 
 `expected = 100 − (elapsed / window × 100)`. Rate-limit fields appear only after the
 first API call of a session, and are omitted from the line until then.
