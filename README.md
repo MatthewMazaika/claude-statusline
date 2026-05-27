@@ -14,26 +14,40 @@ code/cloudflare-telegram-proxy | sonnet-4-6 | 12k/200k | 5h:84%~68% | 1W:36%~29%
 
 ## Install
 
-**Linux / macOS**
+**Quick install** — one line, fetches the script straight from GitHub:
 
 ```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/main/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/main/install.ps1 | iex
+```
+
+**Clone instead** — if you'd rather read the code first and keep a local copy to `git pull`:
+
+```bash
+# Linux / macOS
 git clone https://github.com/MatthewMazaika/claude-statusline.git
 cd claude-statusline
 bash install.sh
 ```
 
-**Windows (PowerShell)**
-
 ```powershell
+# Windows (PowerShell)
 git clone https://github.com/MatthewMazaika/claude-statusline.git
 cd claude-statusline
 .\install.ps1
 ```
 
-The installer copies the script to `~/.claude/` and adds a `statusLine` entry
+Either way the installer drops the script in `~/.claude/` and adds a `statusLine` entry
 (with an absolute path) to `~/.claude/settings.json`. Restart Claude Code to see it.
 
 ## Update
+
+Cloned? Pull and re-run the installer:
 
 ```bash
 git pull && bash install.sh      # Linux/macOS
@@ -42,6 +56,8 @@ git pull && bash install.sh      # Linux/macOS
 ```powershell
 git pull; .\install.ps1          # Windows
 ```
+
+Used the one-liner? Just run it again.
 
 ## Format reference
 
