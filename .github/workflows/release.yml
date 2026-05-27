@@ -44,9 +44,15 @@ jobs:
           IFS=. read -r major minor patch <<< "${last#v}"
 
           # Always release; conventional commits only decide how big the bump is.
-          subjects="$(git log --format='%s%n%b' $range)"
+          # Detect breaking changes from the subject "!" marker or an anchored footer
+          # line only -- never from prose, so a commit that merely mentions the words
+          # mid-sentence in its body cannot trip a major bump. Subjects and bodies are
+          # scanned separately so a body line cannot masquerade as a subject.
+          subjects="$(git log --format='%s' $range)"
+          bodies="$(git log --format='%b' $range)"
           level="patch"
-          if printf '%s\n' "$subjects" | grep -qE '(^[a-zA-Z]+(\([^)]*\))?!:|BREAKING[ -]CHANGE)'; then
+          if printf '%s\n' "$subjects" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
+             || printf '%s\n' "$bodies" | grep -qE '^BREAKING[ -]CHANGE:'; then
             level="major"
           elif printf '%s\n' "$subjects" | grep -qE '^feat(\([^)]*\))?:'; then
             level="minor"
