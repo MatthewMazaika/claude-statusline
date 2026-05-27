@@ -1,0 +1,4 @@
+# Keep the bash script LF so it runs on Linux/macOS regardless of clone settings.
+* text=auto
+*.sh text eol=lf
+*.ps1 text eol=crlf
