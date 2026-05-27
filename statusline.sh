@@ -22,14 +22,22 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
     if ($w == null) or ($w.used_percentage == null) then null
     else
       (100 - $w.used_percentage | ceil) as $remaining
-      | ( [0, ($w.resets_at - $now)] | max ) as $secLeft
-      | ($hours * 3600) as $windowSecs
-      | ($windowSecs - $secLeft) as $elapsed
-      | ( [0, ( [100, ($elapsed / $windowSecs * 100)] | min )] | max ) as $expUsed
-      | (100 - $expUsed | rnd) as $expRemaining
-      | ( ($remaining - $expRemaining) | if . < 0 then -. else . end ) as $delta
-      | if $delta >= 3 then "\($label):\($remaining)%~\($expRemaining)%"
-        else "\($label):\($remaining)%" end
+      # resets_at may be absent/null (the rate_limits object and each window are
+      # omitted until the first API response) or point at a just-passed boundary.
+      # Only compute a pace estimate when it is a usable future timestamp;
+      # otherwise show the bare remaining %. Guards both the bogus "~0%" and the
+      # jq subtraction error that null/absent resets_at would otherwise throw.
+      | (($w.resets_at // 0) - $now) as $secLeft
+      | if $secLeft <= 0 then "\($label):\($remaining)%"
+        else
+          ($hours * 3600) as $windowSecs
+          | ($windowSecs - $secLeft) as $elapsed
+          | ( [0, ( [100, ($elapsed / $windowSecs * 100)] | min )] | max ) as $expUsed
+          | (100 - $expUsed | rnd) as $expRemaining
+          | ( ($remaining - $expRemaining) | if . < 0 then -. else . end ) as $delta
+          | if $delta >= 3 then "\($label):\($remaining)%~\($expRemaining)%"
+            else "\($label):\($remaining)%" end
+        end
     end;
 
   ( ((.cwd // "") | gsub("\\\\"; "/") | split("/") | map(select(. != ""))) ) as $segs
