@@ -19,8 +19,9 @@ try {
         elseif ($segs.Count -eq 1) { $dirStr = $segs[0] }
     }
 
-    # model
+    # model, with /effort suffix when the current model exposes a reasoning effort level
     $modelStr = $obj.model.id -replace '^claude-', ''
+    if ($obj.effort.level) { $modelStr = '{0}/{1}' -f $modelStr, $obj.effort.level }
 
     # token formatter (round half away from zero for cross-platform parity)
     function Format-Tokens($n) {

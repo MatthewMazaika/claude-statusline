@@ -3,7 +3,7 @@
 Know exactly where you stand with Claude Code, on one line, before you hit a limit.
 
 ```
-code/my-project | sonnet-4-6 | 12k/200k | 5h:84%~68% | 7d:36%~29% | $1.23
+code/my-project | opus-4-7/high | 12k/200k | 5h:84%~68% | 7d:36%~29% | $1.23
 ```
 
 Reading left to right: the directory you're working in, the model, context used against the
@@ -87,7 +87,7 @@ Used the one-liner? Just run it again.
 | Field | Source | Notes |
 |-------|--------|-------|
 | `code/my-project` | your current working directory | last 2 path segments, forward-slash normalized |
-| `sonnet-4-6` | `model.id` with `claude-` stripped | |
+| `opus-4-7/high` | `model.id` with `claude-` stripped, then `/effort.level` | The `/effort` suffix is omitted for models that don't expose a reasoning effort level. |
 | `12k/200k` | `context_window.total_input_tokens` / `context_window_size` | abbreviated k / M |
 | `5h:84%~68%` | `rate_limits.five_hour` | Your 5-hour limit: how much you have left, then how much of the window is left — even spending keeps the two equal. The `~` figure disappears when they're within 3%. |
 | `7d:36%~29%` | `rate_limits.seven_day` | Your weekly limit: how much you have left, then how much of the week is left — even spending keeps the two equal. The `~` figure disappears when they're within 3%. |
