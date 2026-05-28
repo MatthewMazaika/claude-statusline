@@ -18,18 +18,19 @@ function Format-Tokens($n) {
 
 # One bar carries both moving numbers on a shared 0-100% axis:
 #   fill (elapsed time) = how far through the window you are; its leading edge is "now"
-#   marker "|" (budget spent) = how far you have drawn the budget down
+#   marker "○" (budget spent) = how far you have drawn the budget down
 # Marker behind the now-edge = banking budget; marker past it = overspending.
 function Format-Gauge($spentPct, $elapsedPct, $n) {
     $full  = [char]0x2588   # full block  (elapsed)
     $light = [char]0x2591   # light shade (still ahead of you)
+    $mk    = [char]0x25CB   # ring marker (budget spent)
     $mark = [int][math]::Floor($spentPct / 100.0 * $n)
     if ($mark -gt ($n - 1)) { $mark = $n - 1 }
     if ($mark -lt 0)        { $mark = 0 }
     $bar = ''
     for ($i = 0; $i -lt $n; $i++) {
         $mid = ($i + 0.5) / $n * 100
-        if     ($i -eq $mark)      { $bar += '|' }
+        if     ($i -eq $mark)      { $bar += $mk }
         elseif ($mid -le $elapsedPct) { $bar += $full }
         else                       { $bar += $light }
     }

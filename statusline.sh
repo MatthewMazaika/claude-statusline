@@ -27,14 +27,14 @@ PROG='
 
   # One bar carries both moving numbers on a shared 0-100% axis:
   #   fill (elapsed time) = how far through the window you are; its leading edge is "now"
-  #   marker "|" (budget spent) = how far you have drawn the budget down
+  #   marker "○" (budget spent) = how far you have drawn the budget down
   # Marker behind the now-edge = banking budget; marker past it = overspending.
   # █ = full block (elapsed), ░ = light shade (still ahead of you).
   def gauge($spent; $elapsed; $n):
     ([0, ([$n - 1, ($spent / 100 * $n | floor)] | min)] | max) as $mark
     | [ range(0; $n) as $i
         | (($i + 0.5) / $n * 100) as $mid
-        | if   $i == $mark        then "|"
+        | if   $i == $mark        then "○"
           elif $mid <= $elapsed   then "█"
           else                         "░" end ]
     | "[" + add + "]";
