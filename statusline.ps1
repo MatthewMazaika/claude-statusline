@@ -56,6 +56,15 @@ try {
         return '{0}:{1}%' -f $label, $remaining
     }
 
+    # session cost (omit when rounded value is zero/missing)
+    $costStr = $null
+    if ($null -ne $obj.cost -and $null -ne $obj.cost.total_cost_usd) {
+        $rounded = [math]::Round([double]$obj.cost.total_cost_usd, 2, [MidpointRounding]::AwayFromZero)
+        if ($rounded -gt 0) {
+            $costStr = '${0:0.00}' -f $rounded
+        }
+    }
+
     $parts = @()
     if ($dirStr) { $parts += $dirStr }
     $parts += $modelStr
@@ -64,6 +73,7 @@ try {
     $wkStr = Format-RateTuple $obj.rate_limits.seven_day  168 '7d'
     if ($fhStr) { $parts += $fhStr }
     if ($wkStr) { $parts += $wkStr }
+    if ($costStr) { $parts += $costStr }
 
     Write-Output ($parts -join ' | ')
 } catch {

@@ -18,6 +18,12 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
       elif $n >= 1000    then "\($n / 1000 | rnd)k"
       else "\($n | floor)" end;
 
+  def fmtcost:
+    ( . * 100 + 0.5 | floor ) as $cents
+    | ($cents / 100 | floor | tostring) as $whole
+    | (($cents % 100) | tostring) as $frac
+    | "$\($whole).\(if ($frac | length) == 1 then "0\($frac)" else $frac end)";
+
   def ratetuple($w; $hours; $label):
     if ($w == null) or ($w.used_percentage == null) then null
     else
@@ -49,8 +55,13 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
   | ( (.context_window.total_input_tokens | fmt) + "/" + (.context_window.context_window_size | fmt) ) as $ctx
   | ratetuple(.rate_limits.five_hour; 5;   "5h") as $fh
   | ratetuple(.rate_limits.seven_day; 168; "7d") as $wk
+  | ( ((.cost.total_cost_usd // 0)) as $c
+      | if (($c * 100 + 0.5) | floor) > 0
+        then ($c | fmtcost)
+        else null end ) as $cost
   | ( (if $dir != "" then [$dir] else [] end) + [$model, $ctx]
-      + (if $fh != null then [$fh] else [] end)
-      + (if $wk != null then [$wk] else [] end) )
+      + (if $fh   != null then [$fh]   else [] end)
+      + (if $wk   != null then [$wk]   else [] end)
+      + (if $cost != null then [$cost] else [] end) )
   | join(" | ")
 '
