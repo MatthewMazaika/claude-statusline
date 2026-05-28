@@ -51,7 +51,9 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
   | ( if   $n >= 2 then "\($segs[$n-2])/\($segs[$n-1])"
       elif $n == 1 then $segs[0]
       else "" end ) as $dir
-  | ( (.model.id // "") | sub("^claude-"; "") ) as $model
+  | ( (.model.id // "") | sub("^claude-"; "") ) as $modelId
+  | ( .effort.level // "" ) as $effort
+  | ( if $effort != "" then "\($modelId)/\($effort)" else $modelId end ) as $model
   | ( (.context_window.total_input_tokens | fmt) + "/" + (.context_window.context_window_size | fmt) ) as $ctx
   | ratetuple(.rate_limits.five_hour; 5;   "5h") as $fh
   | ratetuple(.rate_limits.seven_day; 168; "7d") as $wk
