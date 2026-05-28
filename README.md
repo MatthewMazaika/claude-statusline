@@ -6,18 +6,17 @@ Know exactly where you stand with Claude Code, on one line, before you hit a lim
 code/my-project | opus-4-7/high | 12k/200k | 5h:84%~68% | 7d:36%~29% | $1.23
 ```
 
-Reading left to right: the directory you're working in, the model, context used against the
-window, then your 5-hour and weekly usage, and what the session has cost so far. Each usage
-field pairs what's left with a pace estimate, so a glance tells you whether you're ahead or
-behind — instead of hitting a limit mid-task with no warning.
+You're in **`code/my-project`** on **`opus-4-7`** at **`high`** reasoning effort, **12k of 200k
+context** in. **84% of your 5-hour budget left**, **68% of the window still to go** — budget's
+outpacing the clock, plenty of room to start that deep dive. Same shape for the week:
+**36% budget, 29% clock**. The session's run **$1.23** so far. Read `~` as the clock side:
+budget > clock = room to push, budget < clock = tread lightly or you'll run out.
 
 ## Why you'll want it
 
 - See the cap coming. Pro and Max usage is metered over a rolling 5-hour window and a rolling
   weekly window; keeping both in view lets you pace the work instead of discovering the limit
   mid-task.
-- Pace, not just a number. `7d:36%~29%`: 36% of your weekly limit is left, 29% of the week to go.
-  More of your limit left than the week means you're coasting; less and you're burning hot.
 - The same line everywhere. Identical output on Windows, Linux, and macOS, with `jq` the only
   dependency. No Node, no runtime.
 - One line to install.
