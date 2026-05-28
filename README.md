@@ -3,7 +3,7 @@
 Know exactly where you stand with Claude Code, on one line, before you hit a limit.
 
 ```
-code/my-project | opus-4-7/high | 12k/200k | 5h:84% [█|█░░░░░] | 7d:36% [█████|░░] | $1.23
+code/my-project | opus-4-7/high | 12k/200k | 5h:80% [█|████░░] | 7d:36% [█████|░░] | $1.23
 ```
 
 Directory, model and reasoning effort, context used, your two usage windows, and session
@@ -22,14 +22,15 @@ spent.** So the whole read is one glance: **is the marker behind the now-edge, o
 of it?**
 
 ```
-5h:84% [█|█░░░░░]   conserving   — spent less than the clock; the marker sits back inside
-                                   the elapsed time. Room to push — start that deep dive.
-5h:65% [██|░░░░░]   on pace      — spend rides the leading edge. Right on track.
-5h:52% [███|░░░░]   overspending — spend has run out past now into open water. Ease off
-                                   or you'll hit the limit before the window resets.
+5h:80% [█|████░░]   conserving   — spent far less than the clock; the marker sits way back
+                                   inside the elapsed time, fill stretching past it. Push.
+5h:50% [████|░░░]   on pace      — the marker rides the leading edge of the fill. On track.
+5h:25% [██░░░░|░]   overspending — the marker has run out past now into open water; the
+                                   empty cells to its left are budget you no longer have.
+                                   Ease off before the window resets.
 ```
 
-The number in front (`84%`) is exactly how much budget you have left. The gauge answers the
+The number in front (`80%`) is exactly how much budget you have left. The gauge answers the
 *other* question — am I ahead of or behind the clock — so the two together tell you both how
 much is in the tank and whether you're burning it too fast. If you spent at a perfectly even
 rate, the marker would ride the now-edge the entire window; any gap you see is your pace.
@@ -117,7 +118,7 @@ Used the one-liner? Just run it again.
 | `code/my-project` | your current working directory | last 2 path segments, forward-slash normalized |
 | `opus-4-7/high` | `model.id` with `claude-` stripped, then `/effort.level` | The `/effort` suffix is omitted for models that don't expose a reasoning effort level. |
 | `12k/200k` | `context_window.total_input_tokens` / `context_window_size` | abbreviated k / M |
-| `5h:84% [█\|█░░░░░]` | `rate_limits.five_hour` | Budget left, then a gauge of the 5-hour window. The bar fills with elapsed time (its leading edge is *now*); the `\|` marks budget spent. Marker behind the edge = ahead of pace, marker past it = overspending. Shows a bare `5h:84%` with no gauge until the first API response provides a reset time. |
+| `5h:80% [█\|████░░]` | `rate_limits.five_hour` | Budget left, then a gauge of the 5-hour window. The bar fills with elapsed time (its leading edge is *now*); the `\|` marks budget spent. Marker behind the edge = ahead of pace, marker past it = overspending. Shows a bare `5h:84%` with no gauge until the first API response provides a reset time. |
 | `7d:36% [█████\|░░]` | `rate_limits.seven_day` | Same gauge for the weekly window. |
 | `$1.23` | `cost.total_cost_usd` | Your session cost so far, to the cent. The column is hidden until the first billed turn — `$0` stays off the line. |
 

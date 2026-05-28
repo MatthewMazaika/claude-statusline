@@ -101,9 +101,9 @@ if ($args -contains '--demo' -or $args -contains '-demo') {
         $o = $json | ConvertFrom-Json
         return '{0,-13} {1}' -f $label, (Render-Status $o 0)
     }
-    Write-Output (Demo-Row 'conserving'   16 12240)   # 16% spent, 32% of the window gone
-    Write-Output (Demo-Row 'on pace'      35 11700)   # 35% spent, 35% gone
-    Write-Output (Demo-Row 'overspending' 48 12240)   # 48% spent, 32% gone
+    Write-Output (Demo-Row 'conserving'   20 4500)    # 20% spent, 75% of the window gone — marker deep inside the fill
+    Write-Output (Demo-Row 'on pace'      50 9000)    # 50% spent, 50% gone — marker rides the leading edge
+    Write-Output (Demo-Row 'overspending' 75 13500)   # 75% spent, 25% gone — marker stranded out in the empty
     return
 }
 

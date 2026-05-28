@@ -91,9 +91,9 @@ if [ "${1:-}" = "--demo" ]; then
     printf '{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"effort":{"level":"high"},"context_window":{"total_input_tokens":12000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":64,"resets_at":175392}},"cost":{"total_cost_usd":1.23}}' \
       "$2" "$3" | render 0
   }
-  demo_row "conserving"   16 12240   # 16% spent, 32% of the window gone
-  demo_row "on pace"      35 11700   # 35% spent, 35% gone
-  demo_row "overspending" 48 12240   # 48% spent, 32% gone
+  demo_row "conserving"   20 4500    # 20% spent, 75% of the window gone — marker deep inside the fill
+  demo_row "on pace"      50 9000    # 50% spent, 50% gone — marker rides the leading edge
+  demo_row "overspending" 75 13500   # 75% spent, 25% gone — marker stranded out in the empty
   exit 0
 fi
 
