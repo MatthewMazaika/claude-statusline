@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Claude Code status line (Linux/macOS). Requires jq >= 1.5.
+#
+# Usage:
+#   <claude json> | statusline.sh    # normal: render one status line from stdin
+#   statusline.sh --demo             # print the three pace states (see README)
 set -u
 
-raw="$(cat)"
-[ -z "${raw//[$' \t\r\n']/}" ] && exit 0
-
-now="${CLAUDE_STATUSLINE_NOW:-$(date +%s)}"
-
-printf '%s' "$raw" | jq -r --argjson now "$now" '
+# jq program kept in a variable so --demo can drive the real renderer with
+# synthetic payloads — the examples can never drift from live output.
+PROG='
   # round half away from zero (matches PowerShell AwayFromZero)
   def rnd: if . >= 0 then (. + 0.5 | floor) else (. - 0.5 | ceil) end;
 
@@ -24,25 +25,37 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
     | (($cents % 100) | tostring) as $frac
     | "$\($whole).\(if ($frac | length) == 1 then "0\($frac)" else $frac end)";
 
+  # One bar carries both moving numbers on a shared 0-100% axis:
+  #   fill (elapsed time) = how far through the window you are; its leading edge is "now"
+  #   marker "|" (budget spent) = how far you have drawn the budget down
+  # Marker behind the now-edge = banking budget; marker past it = overspending.
+  # █ = full block (elapsed), ░ = light shade (still ahead of you).
+  def gauge($spent; $elapsed; $n):
+    ([0, ([$n - 1, ($spent / 100 * $n | floor)] | min)] | max) as $mark
+    | [ range(0; $n) as $i
+        | (($i + 0.5) / $n * 100) as $mid
+        | if   $i == $mark        then "|"
+          elif $mid <= $elapsed   then "█"
+          else                         "░" end ]
+    | "[" + add + "]";
+
   def ratetuple($w; $hours; $label):
     if ($w == null) or ($w.used_percentage == null) then null
     else
-      (100 - $w.used_percentage | ceil) as $remaining
+      ($w.used_percentage) as $spent
+      | (100 - $spent | ceil) as $remaining
       # resets_at may be absent/null (the rate_limits object and each window are
       # omitted until the first API response) or point at a just-passed boundary.
-      # Only compute a pace estimate when it is a usable future timestamp;
-      # otherwise show the bare remaining %. Guards both the bogus "~0%" and the
-      # jq subtraction error that null/absent resets_at would otherwise throw.
+      # Only draw the gauge when resets_at is a usable future timestamp; otherwise
+      # show the bare remaining % (no clock data to pace against). Guards both the
+      # bogus all-empty bar and the jq subtraction error null/absent would throw.
       | (($w.resets_at // 0) - $now) as $secLeft
       | if $secLeft <= 0 then "\($label):\($remaining)%"
         else
           ($hours * 3600) as $windowSecs
-          | ($windowSecs - $secLeft) as $elapsed
-          | ( [0, ( [100, ($elapsed / $windowSecs * 100)] | min )] | max ) as $expUsed
-          | (100 - $expUsed | rnd) as $expRemaining
-          | ( ($remaining - $expRemaining) | if . < 0 then -. else . end ) as $delta
-          | if $delta >= 3 then "\($label):\($remaining)%~\($expRemaining)%"
-            else "\($label):\($remaining)%" end
+          | ($windowSecs - $secLeft) as $elapsedSecs
+          | ( [0, ( [100, ($elapsedSecs / $windowSecs * 100)] | min )] | max ) as $elapsed
+          | "\($label):\($remaining)% \(gauge($spent; $elapsed; 8))"
         end
     end;
 
@@ -67,3 +80,24 @@ printf '%s' "$raw" | jq -r --argjson now "$now" '
       + (if $cost != null then [$cost] else [] end) )
   | join(" | ")
 '
+
+render() { jq -r --argjson now "$1" "$PROG"; }
+
+if [ "${1:-}" = "--demo" ]; then
+  # now=0, so resets_at == seconds left in the window. 5h=18000s, 7d=604800s.
+  # The 7d window is held identical across rows so the eye tracks the 5h gauge.
+  demo_row() { # $1 label  $2 used5h  $3 secLeft5h
+    printf '%-13s ' "$1"
+    printf '{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"effort":{"level":"high"},"context_window":{"total_input_tokens":12000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":64,"resets_at":175392}},"cost":{"total_cost_usd":1.23}}' \
+      "$2" "$3" | render 0
+  }
+  demo_row "conserving"   20 4500    # 20% spent, 75% of the window gone — marker deep inside the fill
+  demo_row "on pace"      50 9000    # 50% spent, 50% gone — marker rides the leading edge
+  demo_row "overspending" 75 13500   # 75% spent, 25% gone — marker stranded out in the empty
+  exit 0
+fi
+
+raw="$(cat)"
+[ -z "${raw//[$' \t\r\n']/}" ] && exit 0
+now="${CLAUDE_STATUSLINE_NOW:-$(date +%s)}"
+printf '%s' "$raw" | render "$now"
