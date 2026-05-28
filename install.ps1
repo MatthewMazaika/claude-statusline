@@ -4,9 +4,9 @@
 #   piped remotely:  irm .../install.ps1 | iex     (fetches statusline.ps1)
 $ErrorActionPreference = 'Stop'
 
-# Moving major tag; fetch mode always pulls the latest v1.x release (the release
+# Moving major tag; fetch mode always pulls the latest v2.x release (the release
 # workflow force-moves this tag on each release). Pin a vX.Y.Z tag for a fixed version.
-$ref = 'v1'
+$ref = 'v2'
 $rawBase = "https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/$ref"
 
 $claudeDir = Join-Path $env:USERPROFILE '.claude'
