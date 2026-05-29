@@ -35,13 +35,6 @@ The number in front (`80%`) is exactly how much budget you have left. The gauge 
 much is in the tank and whether you're burning it too fast. If you spent at a perfectly even
 rate, the marker would ride the now-edge the entire window; any gap you see is your pace.
 
-See it on your own machine:
-
-```bash
-bash statusline.sh --demo        # Linux / macOS
-pwsh statusline.ps1 --demo       # Windows
-```
-
 ## Why you'll want it
 
 - Pace the work, don't discover the limit mid-task. Both windows stay in view, and the gauge
@@ -92,6 +85,25 @@ cd claude-statusline
 
 Either way the installer drops the script in `~/.claude/` and adds a `statusLine` entry
 (with an absolute path) to `~/.claude/settings.json`. Restart Claude Code to see it.
+
+## See it right away
+
+A fresh install has no usage data yet, so the gauge stays off the line until your first
+billed turn. To see all three pace states now, run the installed script with `--demo` — it
+renders the conserving / on-pace / overspending rows through the same renderer the live line
+uses.
+
+Linux / macOS
+
+```bash
+bash ~/.claude/statusline.sh --demo
+```
+
+Windows (PowerShell)
+
+```powershell
+pwsh ~/.claude/statusline.ps1 --demo
+```
 
 ## Update
 
