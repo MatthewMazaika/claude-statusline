@@ -14,10 +14,14 @@ the at-a-glance numbers, no matter how long the directory/model path on the left
 runs.
 
 ```
-code/my-project | opus-4-7/high | 12k/200k        5h:80% [█○████░░] | 7d:36% [█████○░░] | $1.23
-deep/nested/path | opus-4-7/high | 80k/200k       5h:80% [█○████░░] | 7d:36% [█████○░░] | $1.23
-                                                  └─ budget cluster flushed to the right edge
+code/my-project | opus-4-7/high | 12k/200k          5h:80% [█○████░░] | 7d:36% [█████○░░] | $1.23
+code/my-project | opus-4-7/high | 12k/200k      5h:100% [█○████░░] | 7d:100% [█████○░░] | $123.45
 ```
+
+Both rows end at the same column — the **right edge is pinned**. The gauge
+*start* drifts left in the second row as the percentages and cost grow wider; the
+gap between the clusters absorbs the difference. That drift is the accepted cost
+of right-edge (rather than fixed-column) alignment.
 
 ## Why this shape
 
@@ -56,6 +60,10 @@ simpler renderer.
 - The existing field-presence logic splits cleanly along the seam — no field
   straddles it, so the same conditional-inclusion rules that exist today carry
   over unchanged into the two clusters.
+- `model` and `ctx` are always present (`model` defaults to `""`, context is
+  always computed), so only `dir` is conditional on the left. The left cluster is
+  never empty for a real CC payload — the "left empty" branch in the decision
+  below (§ rule 3) is a defensive guard, not a live case.
 
 ## Width measurement
 
@@ -79,7 +87,8 @@ Evaluated in order:
 
 1. `cols` empty / not a positive integer → **fallback** (covers old CC).
 2. `right` empty (no windows *and* no cost) → emit `left` alone (identical to today).
-3. `left` empty (no dir) → flush `right` right anyway.
+3. `left` empty → flush `right` right anyway. (Defensive guard; unreachable for
+   real CC payloads since `model`/`ctx` are always present — see § "Layout & seam".)
 4. `L + MIN_GAP + R > cols - 1` → **fallback**. Clusters plus a 2-space minimum
    gap don't fit inside the usable width. `cols - 1` reserves the trailing column
    (writing into the last cell triggers a phantom wrap on some terminals).
@@ -108,16 +117,37 @@ format and it is reused verbatim.
   existing `--argjson now`.
 - **`statusline.ps1`** — mirror: two-cluster build + decision, reading
   `$env:COLUMNS`, measuring with `.Length`.
-- **`--demo`** — set a fixed `COLUMNS` (90) so the demo renders the split rather
-  than silently hitting fallback and printing the old format. Resolve the
-  `%-13s` row-label offset by dropping the inline label in split-demo (label via
-  a preceding echo/comment line instead).
+- **`--demo`** — set a fixed `COLUMNS` (100, wide enough to show a clear gap; at
+  90 the clusters nearly touch) so the demo renders the split rather than silently
+  hitting fallback and printing the old format. Resolve the `%-13s` row-label
+  offset by dropping the inline label in split-demo (label via a preceding
+  echo/comment line instead).
 - **`README.md`** — update the top-line example and the demo block to show the
-  new right-aligned default (last-touch consistency).
-- **Tests** — no harness exists today; add golden-output assertions driving the
-  renderer with fixed `CLAUDE_STATUSLINE_NOW` + `COLUMNS`. Cases: wide→split,
-  narrow→fallback, no-`COLUMNS`→fallback, empty-right→left-only, the 1-col right
-  margin, and the bare-window (no-gauge) right cluster.
+  new right-aligned default (last-touch consistency). The README's job is to pull
+  a reader into *wanting* this status line and never reaching for another — lead
+  with the value, let the right-aligned default look like the obvious way a
+  status line should work. Keep the edit in service of that pull, not a changelog
+  of what moved.
+- **Tests** — no harness exists today. The two scripts are independent
+  reimplementations (bash+jq vs. pure PowerShell, kept in parity by hand), so the
+  test layer's job is to pin both to **one shared behavioral contract** rather
+  than test each in isolation. Define a single golden fixture table — rows of
+  `input JSON + COLUMNS → expected line` — and run **both** `statusline.sh` and
+  `statusline.ps1` against the *same* table with fixed `CLAUDE_STATUSLINE_NOW`.
+  Any divergence between the two implementations fails the shared fixture, which
+  is the cheap drift-killer (no new runtime dependency, no merge of the two
+  renderers). Keep the runner thin — a small shell driver that feeds each row to
+  both scripts and diffs against expected; don't build a framework.
+
+  Fixture rows must cover: wide→split, narrow→fallback, no-`COLUMNS`→fallback,
+  empty-right→left-only, the 1-col right margin, and the bare-window (no-gauge)
+  right cluster.
+
+  This is the chosen scope for the parity concern. Truly unifying the two
+  renderers into one logic core (e.g. ps1 shelling into the jq program) was
+  considered and set aside: it would make jq a Windows dependency and delete the
+  pure-PowerShell script's reason to exist — a separate refactor, not part of
+  this feature.
 
 ## Verification to perform during implementation
 
