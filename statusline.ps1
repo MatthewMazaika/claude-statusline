@@ -121,10 +121,11 @@ function Render-Status($obj, $nowEpoch) {
 # examples can never drift from live output. now=0, so resets_at == seconds left
 # in the window (5h=18000s). The 7d window is held identical across rows.
 if ($args -contains '--demo' -or $args -contains '-demo') {
+    $env:COLUMNS = if ($env:COLUMNS) { $env:COLUMNS } else { '100' }  # fixed width so the split renders
     function Demo-Row($label, $used5h, $secLeft5h) {
         $json = '{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"effort":{"level":"high"},"context_window":{"total_input_tokens":12000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":' + $used5h + ',"resets_at":' + $secLeft5h + '},"seven_day":{"used_percentage":64,"resets_at":175392}},"cost":{"total_cost_usd":1.23}}'
         $o = $json | ConvertFrom-Json
-        return '{0,-13} {1}' -f $label, (Render-Status $o 0)
+        return "# $label`n" + (Render-Status $o 0)
     }
     Write-Output (Demo-Row 'conserving'   20 4500)    # 20% spent, 75% of the window gone — marker deep inside the fill
     Write-Output (Demo-Row 'on pace'      50 9000)    # 50% spent, 50% gone — marker rides the leading edge

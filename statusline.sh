@@ -105,8 +105,9 @@ render() { jq -r --argjson now "$1" --arg cols "${COLUMNS:-}" "$PROG"; }
 if [ "${1:-}" = "--demo" ]; then
   # now=0, so resets_at == seconds left in the window. 5h=18000s, 7d=604800s.
   # The 7d window is held identical across rows so the eye tracks the 5h gauge.
+  export COLUMNS="${COLUMNS:-100}"   # fixed width so the split renders; honor a caller override
   demo_row() { # $1 label  $2 used5h  $3 secLeft5h
-    printf '%-13s ' "$1"
+    printf '# %s\n' "$1"
     printf '{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"effort":{"level":"high"},"context_window":{"total_input_tokens":12000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":64,"resets_at":175392}},"cost":{"total_cost_usd":1.23}}' \
       "$2" "$3" | render 0
   }
