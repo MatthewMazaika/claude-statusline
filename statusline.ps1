@@ -80,17 +80,41 @@ function Render-Status($obj, $nowEpoch) {
         if ($rounded -gt 0) { $costStr = '${0:0.00}' -f $rounded }
     }
 
-    $parts = @()
-    if ($dirStr) { $parts += $dirStr }
-    $parts += $modelStr
-    $parts += $ctxStr
+    # Identity cluster (left); budget cluster (right). Mirrors statusline.sh.
+    # .Length is the cell count because every field is single-cell BMP text with
+    # no ANSI codes — if colored output is ever added, strip ANSI before measuring.
+    $leftParts = @()
+    if ($dirStr) { $leftParts += $dirStr }
+    $leftParts += $modelStr
+    $leftParts += $ctxStr
+    $left = $leftParts -join ' | '
+
     $fhStr = Format-RateTuple $obj.rate_limits.five_hour  5   '5h' $nowEpoch
     $wkStr = Format-RateTuple $obj.rate_limits.seven_day  168 '7d' $nowEpoch
-    if ($fhStr) { $parts += $fhStr }
-    if ($wkStr) { $parts += $wkStr }
-    if ($costStr) { $parts += $costStr }
+    $rightParts = @()
+    if ($fhStr)   { $rightParts += $fhStr }
+    if ($wkStr)   { $rightParts += $wkStr }
+    if ($costStr) { $rightParts += $costStr }
+    $right = $rightParts -join ' | '
 
-    return ($parts -join ' | ')
+    $cols = 0
+    if ($env:COLUMNS -match '^\d+$') { $cols = [int]$env:COLUMNS }
+
+    # Flush right to column $cols-1 (reserve the last cell against phantom wrap).
+    # The CC `padding` setting (an indent we cannot read) may clip a split line by
+    # a few columns — accepted limitation.
+    if ($right.Length -eq 0) { return $left }
+    if ($left.Length -eq 0) {
+        if ($cols -gt 0 -and $right.Length -le ($cols - 1)) {
+            return (' ' * (($cols - 1) - $right.Length)) + $right
+        }
+        return $right
+    }
+    if ($cols -gt 0 -and (($left.Length + 2 + $right.Length) -le ($cols - 1))) {
+        $pad = ($cols - 1) - $left.Length - $right.Length
+        return $left + (' ' * $pad) + $right
+    }
+    return $left + ' | ' + $right
 }
 
 # --demo: drive the real renderer with synthetic payloads so the documented
