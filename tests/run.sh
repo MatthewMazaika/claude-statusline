@@ -50,6 +50,11 @@ J_NORATE='{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"e
 
 # now=0 throughout: resets_at then equals the seconds left in each window.
 
+# --- Split cases (right-aligned; fail until statusline.sh implements it) ---
+run_case "wide-split"       120 0 "$J_FULL"  "$(split "$LEFT" 32 "$RFULL")"
+run_case "margin-1col"       90 0 "$J_FULL"  "$(split "$LEFT" 2  "$RFULL")"
+run_case "bare-window-split" 120 0 "$J_BARE" "$(split "$LEFT" 54 "$RBARE")"
+
 # --- Fallback / characterization cases (green against today's renderer) ---
 run_case "narrow-fallback"   80 0 "$J_FULL"   "$LEFT | $RFULL"
 run_case "nocols-fallback"   "" 0 "$J_FULL"   "$LEFT | $RFULL"

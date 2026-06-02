@@ -25,6 +25,9 @@ PROG='
     | (($cents % 100) | tostring) as $frac
     | "$\($whole).\(if ($frac | length) == 1 then "0\($frac)" else $frac end)";
 
+  # repeat a space k times; the jq " " * n operator yields null for n <= 0, guard it.
+  def spaces($k): if $k > 0 then (" " * $k) else "" end;
+
   # One bar carries both moving numbers on a shared 0-100% axis:
   #   fill (elapsed time) = how far through the window you are; its leading edge is "now"
   #   marker "○" (budget spent) = how far you have drawn the budget down
@@ -74,14 +77,30 @@ PROG='
       | if (($c * 100 + 0.5) | floor) > 0
         then ($c | fmtcost)
         else null end ) as $cost
-  | ( (if $dir != "" then [$dir] else [] end) + [$model, $ctx]
-      + (if $fh   != null then [$fh]   else [] end)
-      + (if $wk   != null then [$wk]   else [] end)
-      + (if $cost != null then [$cost] else [] end) )
-  | join(" | ")
+  # Identity cluster (left) and budget cluster (right). The seam between them is
+  # a space-gap in split mode, the literal " | " in fallback. Width math uses
+  # `length` (codepoint count) because every field is single-cell text with no
+  # ANSI codes — if colored output is ever added, strip ANSI before measuring.
+  | ( ((if $dir != "" then [$dir] else [] end) + [$model, $ctx]) | join(" | ") ) as $left
+  | ( ((if $fh != null then [$fh] else [] end)
+       + (if $wk != null then [$wk] else [] end)
+       + (if $cost != null then [$cost] else [] end)) | join(" | ") ) as $right
+  | ($left  | length) as $L
+  | ($right | length) as $R
+  | (($cols | tonumber?) // 0) as $c   # COLUMNS; 0 when empty/non-numeric (old CC)
+  # Flush right to column $c-1 (the last cell is reserved: writing into it
+  # triggers a phantom wrap on some terminals). If the CC `padding` setting is on
+  # we cannot see that indent, so a split line may clip a few columns — accepted.
+  | if   $R == 0 then $left
+    elif $L == 0 then
+         (if ($c > 0 and $R <= ($c - 1)) then (spaces(($c - 1) - $R) + $right) else $right end)
+    elif ($c > 0 and ($L + 2 + $R) <= ($c - 1)) then
+         ($left + spaces(($c - 1) - $L - $R) + $right)
+    else ($left + " | " + $right)
+    end
 '
 
-render() { jq -r --argjson now "$1" "$PROG"; }
+render() { jq -r --argjson now "$1" --arg cols "${COLUMNS:-}" "$PROG"; }
 
 if [ "${1:-}" = "--demo" ]; then
   # now=0, so resets_at == seconds left in the window. 5h=18000s, 7d=604800s.
