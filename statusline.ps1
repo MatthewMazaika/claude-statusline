@@ -100,18 +100,20 @@ function Render-Status($obj, $nowEpoch) {
     $cols = 0
     if ($env:COLUMNS -match '^\d+$') { $cols = [int]$env:COLUMNS }
 
-    # Flush right to column $cols-1 (reserve the last cell against phantom wrap).
-    # The CC `padding` setting (an indent we cannot read) may clip a split line by
-    # a few columns — accepted limitation.
+    # Claude Code indents the status line 3 columns (built-in, not in COLUMNS;
+    # measured on CC 2.1.160) and keeps the final column blank, so usable width is
+    # COLUMNS - 3 - 1. Flush the budget cluster to that edge. A user-set `padding`
+    # adds further indent we cannot read, so a split may still clip — accepted.
+    $edge = $cols - 4
     if ($right.Length -eq 0) { return $left }
     if ($left.Length -eq 0) {
-        if ($cols -gt 0 -and $right.Length -le ($cols - 1)) {
-            return (' ' * (($cols - 1) - $right.Length)) + $right
+        if ($cols -gt 0 -and $right.Length -le $edge) {
+            return (' ' * ($edge - $right.Length)) + $right
         }
         return $right
     }
-    if ($cols -gt 0 -and (($left.Length + 2 + $right.Length) -le ($cols - 1))) {
-        $pad = ($cols - 1) - $left.Length - $right.Length
+    if ($cols -gt 0 -and (($left.Length + 2 + $right.Length) -le $edge)) {
+        $pad = $edge - $left.Length - $right.Length
         return $left + (' ' * $pad) + $right
     }
     return $left + ' | ' + $right

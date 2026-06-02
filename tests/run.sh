@@ -50,10 +50,14 @@ J_NORATE='{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"e
 
 # now=0 throughout: resets_at then equals the seconds left in each window.
 
-# --- Split cases (right-aligned; fail until statusline.sh implements it) ---
-run_case "wide-split"       120 0 "$J_FULL"  "$(split "$LEFT" 32 "$RFULL")"
-run_case "margin-1col"       90 0 "$J_FULL"  "$(split "$LEFT" 2  "$RFULL")"
-run_case "bare-window-split" 120 0 "$J_BARE" "$(split "$LEFT" 54 "$RBARE")"
+# --- Split cases (right-aligned) ---
+# The budget cluster flushes to COLUMNS-4: CC indents the status line 3 columns
+# (built-in, not in COLUMNS) and keeps the last column blank, so usable = cols-4.
+# Gap math (audit): pad = (cols-4) - L - R, with L=42, Rfull=45, Rbare=23.
+run_case "wide-split"        120 0 "$J_FULL"  "$(split "$LEFT" 29 "$RFULL")"  # 116-42-45
+run_case "margin-fit"         93 0 "$J_FULL"  "$(split "$LEFT" 2  "$RFULL")"  # 89-42-45, just fits
+run_case "margin-just-under"  92 0 "$J_FULL"  "$LEFT | $RFULL"                # 89 > 88 -> fallback
+run_case "bare-window-split" 120 0 "$J_BARE"  "$(split "$LEFT" 51 "$RBARE")"  # 116-42-23
 
 # --- Fallback / characterization cases (green against today's renderer) ---
 run_case "narrow-fallback"   80 0 "$J_FULL"   "$LEFT | $RFULL"

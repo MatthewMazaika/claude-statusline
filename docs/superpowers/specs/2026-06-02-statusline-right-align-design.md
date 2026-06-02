@@ -81,7 +81,14 @@ required first. Out of scope here.
 ## The split/fallback decision
 
 Inputs: `left` string and its length `L`; `right` string and its length `R`;
-`cols` = `COLUMNS` (empty if CC < v2.1.153). Constant `MIN_GAP = 2`.
+`cols` = `COLUMNS` (empty if CC < v2.1.153). Constants `MIN_GAP = 2`, `RESERVE = 4`.
+
+`edge = cols - RESERVE` is the usable right column. `RESERVE = 4` because Claude
+Code renders the status line with a **3-column built-in left indent that is not
+reflected in `COLUMNS`** (measured empirically on CC 2.1.160 — undocumented;
+discovered when cost truncated during local testing) and keeps the final column
+blank. So usable width is `cols - 3 - 1`. Without this, flushing to `cols - 1`
+overflows by the indent and CC truncates the right end (the cost field).
 
 Evaluated in order:
 
@@ -89,10 +96,9 @@ Evaluated in order:
 2. `right` empty (no windows *and* no cost) → emit `left` alone (identical to today).
 3. `left` empty → flush `right` right anyway. (Defensive guard; unreachable for
    real CC payloads since `model`/`ctx` are always present — see § "Layout & seam".)
-4. `L + MIN_GAP + R > cols - 1` → **fallback**. Clusters plus a 2-space minimum
-   gap don't fit inside the usable width. `cols - 1` reserves the trailing column
-   (writing into the last cell triggers a phantom wrap on some terminals).
-5. Otherwise → **split**: `pad = (cols - 1) - L - R` spaces between clusters.
+4. `L + MIN_GAP + R > edge` → **fallback**. Clusters plus a 2-space minimum gap
+   don't fit inside the usable width.
+5. Otherwise → **split**: `pad = edge - L - R` spaces between clusters.
    Rule 4 guarantees `pad ≥ MIN_GAP`.
 
 `MIN_GAP = 2` is the smallest gap that still reads as two groups; below it the
@@ -140,7 +146,7 @@ format and it is reused verbatim.
   both scripts and diffs against expected; don't build a framework.
 
   Fixture rows must cover: wide→split, narrow→fallback, no-`COLUMNS`→fallback,
-  empty-right→left-only, the 1-col right margin, and the bare-window (no-gauge)
+  empty-right→left-only, the `COLUMNS-4` fit boundary, and the bare-window (no-gauge)
   right cluster.
 
   This is the chosen scope for the parity concern. Truly unifying the two

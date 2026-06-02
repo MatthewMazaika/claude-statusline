@@ -88,14 +88,17 @@ PROG='
   | ($left  | length) as $L
   | ($right | length) as $R
   | (($cols | tonumber?) // 0) as $c   # COLUMNS; 0 when empty/non-numeric (old CC)
-  # Flush right to column $c-1 (the last cell is reserved: writing into it
-  # triggers a phantom wrap on some terminals). If the CC `padding` setting is on
-  # we cannot see that indent, so a split line may clip a few columns — accepted.
+  # Claude Code renders the status line with a 3-column built-in left indent that
+  # is NOT reflected in COLUMNS (measured on CC 2.1.160; undocumented), and keeps
+  # the final column blank. So the usable width is COLUMNS - 3 - 1; we flush the
+  # budget cluster to that edge. (A user-set `padding` adds further indent we
+  # cannot read, so a split line may still clip a few columns — accepted.)
+  | ($c - 4) as $edge
   | if   $R == 0 then $left
     elif $L == 0 then
-         (if ($c > 0 and $R <= ($c - 1)) then (spaces(($c - 1) - $R) + $right) else $right end)
-    elif ($c > 0 and ($L + 2 + $R) <= ($c - 1)) then
-         ($left + spaces(($c - 1) - $L - $R) + $right)
+         (if ($c > 0 and $R <= $edge) then (spaces($edge - $R) + $right) else $right end)
+    elif ($c > 0 and ($L + 2 + $R) <= $edge) then
+         ($left + spaces($edge - $L - $R) + $right)
     else ($left + " | " + $right)
     end
 '
