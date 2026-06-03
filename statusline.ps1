@@ -80,27 +80,55 @@ function Render-Status($obj, $nowEpoch) {
         if ($rounded -gt 0) { $costStr = '${0:0.00}' -f $rounded }
     }
 
-    $parts = @()
-    if ($dirStr) { $parts += $dirStr }
-    $parts += $modelStr
-    $parts += $ctxStr
+    # Identity cluster (left); budget cluster (right). Mirrors statusline.sh.
+    # .Length is the cell count because every field is single-cell BMP text with
+    # no ANSI codes — if colored output is ever added, strip ANSI before measuring.
+    $leftParts = @()
+    if ($dirStr) { $leftParts += $dirStr }
+    $leftParts += $modelStr
+    $leftParts += $ctxStr
+    $left = $leftParts -join ' | '
+
     $fhStr = Format-RateTuple $obj.rate_limits.five_hour  5   '5h' $nowEpoch
     $wkStr = Format-RateTuple $obj.rate_limits.seven_day  168 '7d' $nowEpoch
-    if ($fhStr) { $parts += $fhStr }
-    if ($wkStr) { $parts += $wkStr }
-    if ($costStr) { $parts += $costStr }
+    $rightParts = @()
+    if ($fhStr)   { $rightParts += $fhStr }
+    if ($wkStr)   { $rightParts += $wkStr }
+    if ($costStr) { $rightParts += $costStr }
+    $right = $rightParts -join ' | '
 
-    return ($parts -join ' | ')
+    $cols = 0
+    if ($env:COLUMNS -match '^\d+$') { $cols = [int]$env:COLUMNS }
+
+    # Claude Code indents the status line 2 columns (built-in, not in COLUMNS;
+    # measured on CC 2.1.160). Reserving 4 flushes the budget cluster to a 2-column
+    # right inset mirroring that left indent — symmetric, and clear of the last
+    # cell (phantom wrap). Reserving only 1 truncated cost in testing. A user-set
+    # `padding` adds further indent we cannot read, so a split may still clip.
+    $edge = $cols - 4
+    if ($right.Length -eq 0) { return $left }
+    if ($left.Length -eq 0) {
+        if ($cols -gt 0 -and $right.Length -le $edge) {
+            return (' ' * ($edge - $right.Length)) + $right
+        }
+        return $right
+    }
+    if ($cols -gt 0 -and (($left.Length + 2 + $right.Length) -le $edge)) {
+        $pad = $edge - $left.Length - $right.Length
+        return $left + (' ' * $pad) + $right
+    }
+    return $left + ' | ' + $right
 }
 
 # --demo: drive the real renderer with synthetic payloads so the documented
 # examples can never drift from live output. now=0, so resets_at == seconds left
 # in the window (5h=18000s). The 7d window is held identical across rows.
 if ($args -contains '--demo' -or $args -contains '-demo') {
+    $env:COLUMNS = if ($env:COLUMNS) { $env:COLUMNS } else { '100' }  # fixed width so the split renders
     function Demo-Row($label, $used5h, $secLeft5h) {
         $json = '{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"effort":{"level":"high"},"context_window":{"total_input_tokens":12000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":' + $used5h + ',"resets_at":' + $secLeft5h + '},"seven_day":{"used_percentage":64,"resets_at":175392}},"cost":{"total_cost_usd":1.23}}'
         $o = $json | ConvertFrom-Json
-        return '{0,-13} {1}' -f $label, (Render-Status $o 0)
+        return "# $label`n" + (Render-Status $o 0)
     }
     Write-Output (Demo-Row 'conserving'   20 4500)    # 20% spent, 75% of the window gone — marker deep inside the fill
     Write-Output (Demo-Row 'on pace'      50 9000)    # 50% spent, 50% gone — marker rides the leading edge

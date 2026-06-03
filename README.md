@@ -3,11 +3,13 @@
 Know exactly where you stand with Claude Code, on one line, before you hit a limit.
 
 ```
-code/my-project | opus-4-7/high | 12k/200k | 5h:80% [█○████░░] | 7d:36% [█████○░░] | $1.23
+code/my-project | opus-4-7/high | 12k/200k        5h:80% [█○████░░] | 7d:36% [█████○░░] | $1.23
 ```
 
-Directory, model and reasoning effort, context used, your two usage windows, and session
-cost. The usage windows are the part worth learning — see below.
+Directory, model and reasoning effort, and context used sit on the left; your two usage
+windows and session cost sit at the right edge, so the budget read lands in the same place
+however long the path on the left runs (they fold back inline on a narrow terminal). The
+usage windows are the part worth learning — see below.
 
 ## Reading the usage gauge
 

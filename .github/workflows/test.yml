@@ -1,0 +1,25 @@
+name: test
+
+# Runs the shared-contract suite on every PR and every push to main. The
+# ubuntu-latest runner ships both jq and pwsh, so this is where the two
+# renderers (statusline.sh, statusline.ps1) are actually checked against the
+# same expected output — the cross-platform parity the suite exists to enforce.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Show tool versions
+        run: |
+          jq --version
+          pwsh --version
+
+      - name: Run statusline contract tests
+        run: bash tests/run.sh

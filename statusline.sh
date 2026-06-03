@@ -25,6 +25,9 @@ PROG='
     | (($cents % 100) | tostring) as $frac
     | "$\($whole).\(if ($frac | length) == 1 then "0\($frac)" else $frac end)";
 
+  # repeat a space k times; the jq " " * n operator yields null for n <= 0, guard it.
+  def spaces($k): if $k > 0 then (" " * $k) else "" end;
+
   # One bar carries both moving numbers on a shared 0-100% axis:
   #   fill (elapsed time) = how far through the window you are; its leading edge is "now"
   #   marker "○" (budget spent) = how far you have drawn the budget down
@@ -74,20 +77,42 @@ PROG='
       | if (($c * 100 + 0.5) | floor) > 0
         then ($c | fmtcost)
         else null end ) as $cost
-  | ( (if $dir != "" then [$dir] else [] end) + [$model, $ctx]
-      + (if $fh   != null then [$fh]   else [] end)
-      + (if $wk   != null then [$wk]   else [] end)
-      + (if $cost != null then [$cost] else [] end) )
-  | join(" | ")
+  # Identity cluster (left) and budget cluster (right). The seam between them is
+  # a space-gap in split mode, the literal " | " in fallback. Width math uses
+  # `length` (codepoint count) because every field is single-cell text with no
+  # ANSI codes — if colored output is ever added, strip ANSI before measuring.
+  | ( ((if $dir != "" then [$dir] else [] end) + [$model, $ctx]) | join(" | ") ) as $left
+  | ( ((if $fh != null then [$fh] else [] end)
+       + (if $wk != null then [$wk] else [] end)
+       + (if $cost != null then [$cost] else [] end)) | join(" | ") ) as $right
+  | ($left  | length) as $L
+  | ($right | length) as $R
+  | (($cols | tonumber?) // 0) as $c   # COLUMNS; 0 when empty/non-numeric (old CC)
+  # Claude Code renders the status line with a 2-column built-in left indent that
+  # is NOT reflected in COLUMNS (measured on CC 2.1.160; undocumented). Reserving
+  # 4 flushes the budget cluster to a 2-column right inset that mirrors that left
+  # indent — a symmetric layout, and safely clear of the last cell (writing it
+  # triggers a phantom wrap). Reserving only 1 truncated cost in testing. (A
+  # user-set `padding` adds further indent we cannot read, so a split may still
+  # clip — accepted.)
+  | ($c - 4) as $edge
+  | if   $R == 0 then $left
+    elif $L == 0 then
+         (if ($c > 0 and $R <= $edge) then (spaces($edge - $R) + $right) else $right end)
+    elif ($c > 0 and ($L + 2 + $R) <= $edge) then
+         ($left + spaces($edge - $L - $R) + $right)
+    else ($left + " | " + $right)
+    end
 '
 
-render() { jq -r --argjson now "$1" "$PROG"; }
+render() { jq -r --argjson now "$1" --arg cols "${COLUMNS:-}" "$PROG"; }
 
 if [ "${1:-}" = "--demo" ]; then
   # now=0, so resets_at == seconds left in the window. 5h=18000s, 7d=604800s.
   # The 7d window is held identical across rows so the eye tracks the 5h gauge.
+  export COLUMNS="${COLUMNS:-100}"   # fixed width so the split renders; honor a caller override
   demo_row() { # $1 label  $2 used5h  $3 secLeft5h
-    printf '%-13s ' "$1"
+    printf '# %s\n' "$1"
     printf '{"cwd":"/home/you/code/my-project","model":{"id":"claude-opus-4-7"},"effort":{"level":"high"},"context_window":{"total_input_tokens":12000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":64,"resets_at":175392}},"cost":{"total_cost_usd":1.23}}' \
       "$2" "$3" | render 0
   }
