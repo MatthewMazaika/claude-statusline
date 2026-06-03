@@ -83,12 +83,16 @@ required first. Out of scope here.
 Inputs: `left` string and its length `L`; `right` string and its length `R`;
 `cols` = `COLUMNS` (empty if CC < v2.1.153). Constants `MIN_GAP = 2`, `RESERVE = 4`.
 
-`edge = cols - RESERVE` is the usable right column. `RESERVE = 4` because Claude
-Code renders the status line with a **3-column built-in left indent that is not
-reflected in `COLUMNS`** (measured empirically on CC 2.1.160 — undocumented;
-discovered when cost truncated during local testing) and keeps the final column
-blank. So usable width is `cols - 3 - 1`. Without this, flushing to `cols - 1`
-overflows by the indent and CC truncates the right end (the cost field).
+`edge = cols - RESERVE` is the usable right column. `RESERVE = 4` for two
+reasons. First, Claude Code renders the status line with a **2-column built-in
+left indent that is not reflected in `COLUMNS`** (measured empirically on CC
+2.1.160 — undocumented; discovered when cost truncated during local testing):
+flushing to `cols - 1` overflows by that indent and CC truncates the right end
+(the cost field). Second, `RESERVE = 4` lands the budget cluster at a 2-column
+right inset that **mirrors the 2-column left indent** — a deliberate symmetric
+layout — while staying clear of the final cell (writing it triggers a phantom
+wrap). The tightest safe value is 3 (a 1-column right gap); 4 was chosen for the
+symmetry.
 
 Evaluated in order:
 

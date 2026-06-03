@@ -100,10 +100,11 @@ function Render-Status($obj, $nowEpoch) {
     $cols = 0
     if ($env:COLUMNS -match '^\d+$') { $cols = [int]$env:COLUMNS }
 
-    # Claude Code indents the status line 3 columns (built-in, not in COLUMNS;
-    # measured on CC 2.1.160) and keeps the final column blank, so usable width is
-    # COLUMNS - 3 - 1. Flush the budget cluster to that edge. A user-set `padding`
-    # adds further indent we cannot read, so a split may still clip — accepted.
+    # Claude Code indents the status line 2 columns (built-in, not in COLUMNS;
+    # measured on CC 2.1.160). Reserving 4 flushes the budget cluster to a 2-column
+    # right inset mirroring that left indent — symmetric, and clear of the last
+    # cell (phantom wrap). Reserving only 1 truncated cost in testing. A user-set
+    # `padding` adds further indent we cannot read, so a split may still clip.
     $edge = $cols - 4
     if ($right.Length -eq 0) { return $left }
     if ($left.Length -eq 0) {

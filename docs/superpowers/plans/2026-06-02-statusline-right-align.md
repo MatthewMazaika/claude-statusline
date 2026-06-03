@@ -8,7 +8,7 @@
 
 **Tech Stack:** bash + jq ≥ 1.5 (`statusline.sh`), PowerShell (`statusline.ps1`), a bash test runner (`tests/run.sh`).
 
-> **Implementation note (correction):** this plan was written to flush to `COLUMNS-1`. Local testing revealed Claude Code applies a 3-column built-in left indent not reflected in `COLUMNS` (and keeps the last column blank), which truncated the cost field. The implemented reserve is `COLUMNS-4` (3 indent + 1 trailing). The code blocks below show the original `COLUMNS-1` form; the shipped value and rationale live in the spec's split/fallback decision section. Test gap math below (`32`, `2`, `54`) was likewise re-derived to `29`, `2`, `51`.
+> **Implementation note (correction):** this plan was written to flush to `COLUMNS-1`. Local testing revealed Claude Code applies a 2-column built-in left indent not reflected in `COLUMNS`, which truncated the cost field. The implemented reserve is `COLUMNS-4`, which also lands the budget cluster at a 2-column right inset mirroring that left indent (symmetric; the tightest safe value is `COLUMNS-3`). The code blocks below show the original `COLUMNS-1` form; the shipped value and rationale live in the spec's split/fallback decision section. Test gap math below (`32`, `2`, `54`) was likewise re-derived to `29`, `2`, `51`.
 
 **Spec:** `docs/superpowers/specs/2026-06-02-statusline-right-align-design.md`
 
