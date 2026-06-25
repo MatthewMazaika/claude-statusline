@@ -8,6 +8,37 @@ $ErrorActionPreference = 'Continue'
 # Block-drawing glyphs need a UTF-8 console or they render as mojibake.
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
 
+# ── Cost-baseline state ────────────────────────────────────────────────────────
+# /clear creates a new session_id (its SessionStart hook fires with the
+# "SessionStart:clear" event name). cost.total_cost_usd, however, is a
+# terminal-process-level accumulator that does not reset when the session_id
+# changes. We persist the last-seen session_id and cost baseline so the
+# displayed cost reflects only the current conversation.
+#
+# State file lives next to the script so it survives across invocations without
+# any environment-variable dependency.
+$StateFile = if ($env:CLAUDE_STATUSLINE_STATE_FILE) {
+    $env:CLAUDE_STATUSLINE_STATE_FILE
+} elseif ($PSCommandPath) {
+    Join-Path (Split-Path -Parent $PSCommandPath) 'statusline-state.json'
+} else {
+    "$env:USERPROFILE\.claude\statusline-state.json"
+}
+
+function Read-CostState {
+    try {
+        if (Test-Path $StateFile) { return Get-Content $StateFile -Raw | ConvertFrom-Json }
+    } catch {}
+    return [PSCustomObject]@{ sessionId = ''; costBaseline = 0.0 }
+}
+
+function Write-CostState($sid, $baseline) {
+    try {
+        [ordered]@{ sessionId = $sid; costBaseline = $baseline } |
+            ConvertTo-Json -Compress | Set-Content $StateFile -Encoding UTF8
+    } catch {}
+}
+
 # token formatter (round half away from zero for cross-platform parity)
 function Format-Tokens($n) {
     $v = [double]$n
@@ -140,6 +171,20 @@ try {
     $raw = [Console]::In.ReadToEnd()
     if (-not $raw.Trim()) { return }
     $obj = $raw | ConvertFrom-Json
+
+    # Adjust cost.total_cost_usd to reflect only the current conversation.
+    # /clear assigns a new session_id; when we see a new id, snapshot the
+    # current cumulative cost as the new baseline.
+    $sid     = [string]($obj.session_id)
+    $rawCost = if ($null -ne $obj.cost -and $null -ne $obj.cost.total_cost_usd) {
+                   [double]$obj.cost.total_cost_usd } else { 0.0 }
+    $st      = Read-CostState
+    $baseline = if ($st.sessionId -ne $sid) { $rawCost } else { [double]$st.costBaseline }
+    Write-CostState $sid $baseline
+
+    if ($null -ne $obj.cost -and $null -ne $obj.cost.total_cost_usd) {
+        $obj.cost.total_cost_usd = [math]::Max(0.0, $rawCost - $baseline)
+    }
 
     # now (epoch seconds): test override or real UTC
     if ($env:CLAUDE_STATUSLINE_NOW) {

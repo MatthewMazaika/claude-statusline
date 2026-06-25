@@ -134,7 +134,7 @@ Used the one-liner? Just run it again.
 | `12k/200k` | `context_window.total_input_tokens` / `context_window_size` | abbreviated k / M |
 | `5h:80% [█○████░░]` | `rate_limits.five_hour` | Budget left, then a gauge of the 5-hour window. The bar fills with elapsed time (its leading edge is *now*); the `○` marks budget spent. Marker behind the edge = ahead of pace, marker past it = overspending. Shows a bare `5h:84%` with no gauge until the first API response provides a reset time. |
 | `7d:36% [█████○░░]` | `rate_limits.seven_day` | Same gauge for the weekly window. |
-| `$1.23` | `cost.total_cost_usd` | Your session cost so far, to the cent. The column is hidden until the first billed turn — `$0` stays off the line. |
+| `$1.23` | `cost.total_cost_usd` | Cost of the current conversation, to the cent. Resets to zero after each `/clear`. Hidden until the first billed turn. |
 
 A fresh session shows only directory, model, and context — the usage and cost fields have no
 data until the first billed turn, so they stay off the line until then.
