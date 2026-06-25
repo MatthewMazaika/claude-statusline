@@ -12,6 +12,11 @@ root="$(cd "$here/.." && pwd)"
 sh_script="$root/statusline.sh"
 ps_script="$root/statusline.ps1"
 
+# Isolate cost state so the live state file can't contaminate test output.
+export CLAUDE_STATUSLINE_STATE_FILE
+CLAUDE_STATUSLINE_STATE_FILE="$(mktemp)"
+trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"' EXIT
+
 have_pwsh=0
 if command -v pwsh >/dev/null 2>&1; then
   have_pwsh=1
@@ -63,6 +68,48 @@ run_case "bare-window-split" 120 0 "$J_BARE"  "$(split "$LEFT" 51 "$RBARE")"  # 
 run_case "narrow-fallback"   80 0 "$J_FULL"   "$LEFT | $RFULL"
 run_case "nocols-fallback"   "" 0 "$J_FULL"   "$LEFT | $RFULL"
 run_case "empty-right"      120 0 "$J_NORATE" "$LEFT"
+
+# ── Cost-reset tests (PowerShell only — bash statusline.sh omits cost) ────────
+# These exercise the state-file logic that resets cost on /clear.
+# /clear creates a new session_id (Claude Code fires SessionStart:clear and
+# assigns a fresh UUID); cost.total_cost_usd is a terminal-process accumulator
+# that does NOT reset. We snapshot the accumulated cost as the new baseline so
+# the displayed value reflects only the current conversation.
+
+run_cost_ps() { # name  state_json  json  expected_substr ('' = expect no cost token)
+  [ "$have_pwsh" = 1 ] || return
+  local name="$1" state="$2" json="$3" expected="$4"
+  printf '%s' "$state" > "$CLAUDE_STATUSLINE_STATE_FILE"
+  local got
+  got="$(printf '%s' "$json" | pwsh -NoProfile -File "$ps_script")"
+  if [ -z "$expected" ]; then
+    if printf '%s' "$got" | grep -qE '\$[0-9]'; then
+      fail=$((fail+1))
+      printf 'FAIL [ps] %s\n  want: no cost token\n  got:  |%s|\n' "$name" "$got"
+    else
+      pass=$((pass+1))
+    fi
+  else
+    if printf '%s' "$got" | grep -qF "$expected"; then
+      pass=$((pass+1))
+    else
+      fail=$((fail+1))
+      printf 'FAIL [ps] %s\n  want output containing |%s|\n  got:  |%s|\n' "$name" "$expected" "$got"
+    fi
+  fi
+}
+
+# Minimal JSONs for cost-state tests (no rate limits, small ctx keeps output short)
+J_A123='{"session_id":"sess-A","context_window":{"total_input_tokens":100,"context_window_size":200000},"cost":{"total_cost_usd":1.23}}'
+J_B000='{"session_id":"sess-B","context_window":{"total_input_tokens":100,"context_window_size":200000},"cost":{"total_cost_usd":1.23}}'
+J_B027='{"session_id":"sess-B","context_window":{"total_input_tokens":100,"context_window_size":200000},"cost":{"total_cost_usd":1.50}}'
+
+# Within the same session: full accumulated cost is shown
+run_cost_ps "within-session"        '{"sessionId":"sess-A","costBaseline":0}'    "$J_A123" '$1.23'
+# /clear (new session_id, same terminal total): baseline resets to rawCost → $0 hidden
+run_cost_ps "clear-resets-display"  '{"sessionId":"sess-A","costBaseline":0}'    "$J_B000" ''
+# After /clear, as the new session accumulates cost: delta is shown
+run_cost_ps "post-clear-accumulate" '{"sessionId":"sess-B","costBaseline":1.23}' "$J_B027" '$0.27'
 
 echo "----"
 echo "pass=$pass fail=$fail"
