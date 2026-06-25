@@ -76,26 +76,28 @@ run_case "empty-right"      120 0 "$J_NORATE" "$LEFT"
 # that does NOT reset. We snapshot the accumulated cost as the new baseline so
 # the displayed value reflects only the current conversation.
 
-run_cost_ps() { # name  state_json  json  expected_substr ('' = expect no cost token)
-  [ "$have_pwsh" = 1 ] || return
-  local name="$1" state="$2" json="$3" expected="$4"
-  printf '%s' "$state" > "$CLAUDE_STATUSLINE_STATE_FILE"
-  local got
-  got="$(printf '%s' "$json" | pwsh -NoProfile -File "$ps_script")"
+_cost_check() { # label  got  expected_substr
+  local label="$1" got="$2" expected="$3"
   if [ -z "$expected" ]; then
     if printf '%s' "$got" | grep -qE '\$[0-9]'; then
-      fail=$((fail+1))
-      printf 'FAIL [ps] %s\n  want: no cost token\n  got:  |%s|\n' "$name" "$got"
-    else
-      pass=$((pass+1))
-    fi
+      fail=$((fail+1)); printf 'FAIL [%s] %s\n  want: no cost token\n  got:  |%s|\n' "$label" "$name" "$got"
+    else pass=$((pass+1)); fi
   else
     if printf '%s' "$got" | grep -qF "$expected"; then
       pass=$((pass+1))
     else
-      fail=$((fail+1))
-      printf 'FAIL [ps] %s\n  want output containing |%s|\n  got:  |%s|\n' "$name" "$expected" "$got"
+      fail=$((fail+1)); printf 'FAIL [%s] %s\n  want output containing |%s|\n  got:  |%s|\n' "$label" "$name" "$expected" "$got"
     fi
+  fi
+}
+
+run_cost_case() { # name  state_json  json  expected_substr ('' = expect no cost token)
+  local name="$1" state="$2" json="$3" expected="$4" got
+  printf '%s' "$state" > "$CLAUDE_STATUSLINE_STATE_FILE"
+  got="$(printf '%s' "$json" | bash "$sh_script")"; _cost_check sh "$got" "$expected"
+  if [ "$have_pwsh" = 1 ]; then
+    printf '%s' "$state" > "$CLAUDE_STATUSLINE_STATE_FILE"
+    got="$(printf '%s' "$json" | pwsh -NoProfile -File "$ps_script")"; _cost_check ps "$got" "$expected"
   fi
 }
 
@@ -105,11 +107,11 @@ J_B000='{"session_id":"sess-B","context_window":{"total_input_tokens":100,"conte
 J_B027='{"session_id":"sess-B","context_window":{"total_input_tokens":100,"context_window_size":200000},"cost":{"total_cost_usd":1.50}}'
 
 # Within the same session: full accumulated cost is shown
-run_cost_ps "within-session"        '{"sessionId":"sess-A","costBaseline":0}'    "$J_A123" '$1.23'
+run_cost_case "within-session"        '{"sessionId":"sess-A","costBaseline":0}'    "$J_A123" '$1.23'
 # /clear (new session_id, same terminal total): baseline resets to rawCost → $0 hidden
-run_cost_ps "clear-resets-display"  '{"sessionId":"sess-A","costBaseline":0}'    "$J_B000" ''
+run_cost_case "clear-resets-display"  '{"sessionId":"sess-A","costBaseline":0}'    "$J_B000" ''
 # After /clear, as the new session accumulates cost: delta is shown
-run_cost_ps "post-clear-accumulate" '{"sessionId":"sess-B","costBaseline":1.23}' "$J_B027" '$0.27'
+run_cost_case "post-clear-accumulate" '{"sessionId":"sess-B","costBaseline":1.23}' "$J_B027" '$0.27'
 
 echo "----"
 echo "pass=$pass fail=$fail"

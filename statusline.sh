@@ -6,6 +6,22 @@
 #   statusline.sh --demo             # print the three pace states (see README)
 set -u
 
+# ── Cost-baseline state ────────────────────────────────────────────────────────
+# /clear creates a new session_id (its SessionStart hook fires with the
+# "SessionStart:clear" event name). cost.total_cost_usd, however, is a
+# terminal-process-level accumulator that does not reset when the session_id
+# changes. We persist the last-seen session_id and cost baseline so the
+# displayed cost reflects only the current conversation.
+_script="${BASH_SOURCE[0]:-}"
+_dir="$([ -n "$_script" ] && cd "$(dirname "$_script")" 2>/dev/null && pwd || true)"
+_state_file="${CLAUDE_STATUSLINE_STATE_FILE:-${_dir:+$_dir/statusline-state.json}}"
+_state_file="${_state_file:-$HOME/.claude/statusline-state.json}"
+
+_write_state() { # sid baseline
+  printf '{"sessionId":"%s","costBaseline":%s}\n' "$1" "$2" \
+    > "$_state_file" 2>/dev/null || true
+}
+
 # jq program kept in a variable so --demo can drive the real renderer with
 # synthetic payloads — the examples can never drift from live output.
 PROG='
@@ -125,4 +141,23 @@ fi
 raw="$(cat)"
 [ -z "${raw//[$' \t\r\n']/}" ] && exit 0
 now="${CLAUDE_STATUSLINE_NOW:-$(date +%s)}"
+
+# Adjust cost.total_cost_usd to reflect only the current conversation.
+# /clear assigns a new session_id; when we see a new id, snapshot the
+# current cumulative cost as the new baseline.
+_rawcost="$(printf '%s' "$raw" | jq -r 'if .cost.total_cost_usd != null then .cost.total_cost_usd else empty end' 2>/dev/null || true)"
+if [ -n "$_rawcost" ]; then
+  _sid="$(printf '%s' "$raw" | jq -r '.session_id // empty' 2>/dev/null || true)"
+  if [ -f "$_state_file" ] && [ -s "$_state_file" ]; then
+    _prev_sid="$(jq -r '.sessionId // ""' "$_state_file" 2>/dev/null || true)"
+    _baseline="$(jq -r '.costBaseline // 0' "$_state_file" 2>/dev/null || printf '0')"
+  else
+    _prev_sid="" _baseline="0"
+  fi
+  if [ "${_prev_sid}" != "${_sid}" ]; then _baseline="$_rawcost"; fi
+  _write_state "${_sid}" "${_baseline}"
+  raw="$(printf '%s' "$raw" | jq --argjson b "${_baseline:-0}" \
+    'if .cost.total_cost_usd != null then .cost.total_cost_usd = ([0, (.cost.total_cost_usd - $b)] | max) else . end')"
+fi
+
 printf '%s' "$raw" | render "$now"
