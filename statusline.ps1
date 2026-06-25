@@ -182,7 +182,12 @@ try {
     if ($st.sessionId -ne $sid) {
         $baseline = 0.0                        # new terminal session
     } elseif ($lastTok -gt 10000 -and $curTok -lt 5000) {
-        $baseline = $rawCost                   # /clear detected
+        # /clear detected: tokens dropped from a substantive conversation (>10k)
+        # back to near-zero (<5k = effectively empty context).
+        # Known limitation: if the first post-clear message is a large file/paste
+        # that pushes tokens above 5k before the next statusline emit, the clear
+        # is missed and the baseline won't update for that conversation.
+        $baseline = $rawCost
     }
     Write-CostState $sid $baseline $curTok
 
