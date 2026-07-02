@@ -17,6 +17,13 @@ export CLAUDE_STATUSLINE_STATE_FILE
 CLAUDE_STATUSLINE_STATE_FILE="$(mktemp)"
 trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"' EXIT
 
+# Disable auto-update: these scripts run straight from the repo checkout, and
+# several cases below don't pin CLAUDE_STATUSLINE_NOW (real wall-clock "now"
+# with no prior state file reads as "due"). Without this, a test run can spawn
+# a real background fetch that overwrites the checked-out statusline.sh/.ps1
+# with whatever is currently published at the v2 tag.
+export CLAUDE_STATUSLINE_NO_UPDATE=1
+
 have_pwsh=0
 if command -v pwsh >/dev/null 2>&1; then
   have_pwsh=1
