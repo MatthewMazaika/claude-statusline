@@ -5,7 +5,16 @@
 Today, staying current requires the user to manually re-run the installer
 (`git pull && install.sh`, or re-run the curl/irm one-liner). This design adds
 silent, automatic self-updating so a deployed `~/.claude/statusline.sh` (or
-`.ps1`) stays on the latest `v1.x` release without any manual action.
+`.ps1`) stays on the latest `v2.x` release without any manual action.
+
+> Note: this spec was originally drafted against a stale local checkout of
+> `main` that predated 10 merged commits, including the `v1` → `v2` breaking
+> release (`3067729 feat!: usage pace gauge`, `d766a09 fix: point default
+> installer at v2`). It has been corrected to match the real current
+> `statusline.sh`/`.ps1` (cost-baseline state file, `--demo` arg dispatch,
+> gauge-bar rendering) before implementation. The auto-update mechanism
+> itself is unaffected by the format change — only the tag name and a few
+> implementation details below were updated to match existing conventions.
 
 ## Scope
 
@@ -19,8 +28,21 @@ to `install.sh` / `install.ps1` / `release.yml` / `README.md` are required.
 
 Self-update logic is embedded directly in both scripts, appended after the
 existing statusline-rendering logic so it can never affect the primary
-output or exit code. State is a single stamp file,
-`~/.claude/.statusline-update-check`, holding the last-check timestamp.
+output or exit code. It reuses two conventions the codebase already
+established for the cost-baseline feature:
+
+- **Argument dispatch**: both scripts already special-case `$1`/`$args`
+  (`--demo`) before reading stdin. Auto-update adds a third branch,
+  `--update-worker`, checked the same way — no new dispatch mechanism.
+- **State file placement**: both scripts already resolve a directory-adjacent
+  state file (`_state_file` in bash, `$StateFile` in PowerShell — see the
+  cost-baseline block), overridable via an env var
+  (`CLAUDE_STATUSLINE_STATE_FILE`). The update-check timestamp reuses the
+  same resolved directory (bash: `$_dir`; PowerShell: `Split-Path -Parent
+  $PSCommandPath`) with its own file, `statusline-update-state.json`,
+  overridable via `CLAUDE_STATUSLINE_UPDATE_STATE_FILE`, storing
+  `{"lastCheck": <epoch>}` — same JSON-object shape as the existing cost
+  state file, not a bare timestamp file.
 
 On every invocation, **after** the statusline text has been computed and
 printed:
@@ -43,8 +65,8 @@ ever triggers a spawn once per 24h.
 
 ## Fetch & replace (background process)
 
-1. Fetch the current `v1`-tagged script from
-   `https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/v1/statusline.sh`
+1. Fetch the current `v2`-tagged script from
+   `https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/v2/statusline.sh`
    (or `.ps1`), using the same curl/wget fallback (bash) or
    `Invoke-WebRequest` (PowerShell) pattern the installers already use, with
    a short timeout (~5-10s total) so a slow/dead network can't leave the
@@ -52,7 +74,8 @@ ever triggers a spawn once per 24h.
 2. Sanity-check the response before touching anything on disk:
    - non-empty
    - starts with the expected first line (`#!/usr/bin/env bash` for the
-     bash script; the PowerShell header comment for the ps1 script)
+     bash script; the leading `# Claude Code status line` header comment
+     for the ps1 script)
    - size within a broad sane band of the current deployed file (guards
      against installing a GitHub error page or truncated response)
 3. If the fetched content is byte-identical to the currently deployed file,
