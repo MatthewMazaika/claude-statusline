@@ -34,15 +34,28 @@ _script_abs="${_script_abs:-$_script}"
 _update_state_file="${CLAUDE_STATUSLINE_UPDATE_STATE_FILE:-${_dir:+$_dir/statusline-update-state.json}}"
 _update_state_file="${_update_state_file:-$HOME/.claude/statusline-update-state.json}"
 
+# Walk up from $1 looking for a .git entry (dir or file — worktrees use a
+# .git file pointing at the real gitdir). A dev iterating on this code from a
+# checkout should never have it silently self-replace mid-edit -- this is a
+# structural guard, independent of callers remembering CLAUDE_STATUSLINE_NO_UPDATE.
+_inside_git_tree() { # dir
+  local d="$1"
+  while [ -n "$d" ] && [ "$d" != "/" ] && [ "$d" != "." ]; do
+    [ -e "$d/.git" ] && return 0
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
 update_worker() {
   local url tmp
   [ -z "$_script_abs" ] && return 0
   url="${CLAUDE_STATUSLINE_UPDATE_URL:-https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/v2/statusline.sh}"
   tmp="$(mktemp "${_script_abs}.XXXXXX" 2>/dev/null)" || return 0
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --max-time 10 "$url" -o "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    curl -fsSL --max-time 10 -o "$tmp" -- "$url" 2>/dev/null || { rm -f "$tmp"; return 0; }
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -T 10 -O "$tmp" "$url" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    wget -q -T 10 -O "$tmp" -- "$url" 2>/dev/null || { rm -f "$tmp"; return 0; }
   else
     rm -f "$tmp"; return 0
   fi
@@ -63,11 +76,17 @@ update_worker() {
 maybe_schedule_update() { # $1 = now (epoch seconds)
   [ -n "${CLAUDE_STATUSLINE_NO_UPDATE:-}" ] && return 0
   [ -z "$_script_abs" ] && return 0
+  # Sanitize $1 before arithmetic: under `set -u`, a non-numeric value (e.g. a
+  # bad CLAUDE_STATUSLINE_NOW override) would otherwise make `$(( $1 - last ))`
+  # expand an unset variable reference and abort the whole script.
+  case "${1:-}" in ''|*[!0-9]*) return 0 ;; esac
   local interval last
   interval="${CLAUDE_STATUSLINE_UPDATE_INTERVAL:-86400}"
+  case "$interval" in ''|*[!0-9]*) interval=86400 ;; esac
   last="$(jq -r '.lastCheck // 0' "$_update_state_file" 2>/dev/null || printf '0')"
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
   [ $(( $1 - last )) -lt "$interval" ] && return 0
+  _inside_git_tree "$_dir" && return 0
   printf '{"lastCheck":%s}\n' "$1" > "$_update_state_file" 2>/dev/null
   bash "$_script_abs" --update-worker </dev/null >/dev/null 2>&1 &
   disown 2>/dev/null || true
@@ -217,5 +236,7 @@ if [ -n "$_rawcost" ]; then
 fi
 
 printf '%s' "$raw" | render "$now"
+rc=$?
 
 maybe_schedule_update "$now"
+exit "$rc"

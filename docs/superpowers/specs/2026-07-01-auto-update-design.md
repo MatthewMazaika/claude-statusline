@@ -113,6 +113,50 @@ mechanism, checked before the stamp file is touched. Provided as a safety
 valve for anyone who wants to pin their current version or avoid a
 self-modifying script, at negligible implementation cost.
 
+## Post-implementation hardening (4-lens QA)
+
+A 4-agent QA pass (code quality, security, test quality, maintainability)
+over the initial implementation surfaced and fixed:
+
+- **Exit-code masking (bash)**: the throttle/spawn call was the last
+  statement in the script, so its always-0 return silently overrode the
+  real render's exit code on failure. Fixed by capturing the render's `$?`
+  and `exit`ing with it explicitly after scheduling.
+- **Uncaught cast exception (PowerShell)**: a malformed
+  `CLAUDE_STATUSLINE_UPDATE_INTERVAL` threw a terminating
+  `PSInvalidCastException` outside any try/catch. Fixed with
+  `[int]::TryParse` plus wrapping the whole scheduling function in
+  try/catch, matching the "never affect exit code" guarantee.
+- **Unbound-variable risk (bash)**: a malformed `CLAUDE_STATUSLINE_NOW`
+  fed unsanitized into `set -u` arithmetic could abort the script. Fixed by
+  sanitizing both `$now` and the interval before arithmetic use.
+- **PowerShell sanity-check parity gap**: the ps1 worker accepted any
+  content starting with a bare `#`, not the specific header line the bash
+  side and this spec both require — a real gap two independent review
+  lenses converged on. Fixed to match.
+- **Git-working-tree self-guard**: added a structural check (walk up for a
+  `.git` entry) so the throttled auto-trigger refuses to fire when the
+  deployed script is actually a repo checkout — independent of callers
+  remembering `CLAUDE_STATUSLINE_NO_UPDATE`. Directly motivated by an
+  incident during this feature's own development, where the test suite
+  (before it set that env var) triggered a real background fetch that
+  overwrote this repo's own tracked `statusline.sh`.
+- **Automated coverage added**: `tests/run.sh` gained deterministic,
+  offline `file://`-URI cases exercising `--update-worker` directly
+  (replace-on-newer, no-op-on-identical, reject-garbage,
+  reject-unreachable) against throwaway copies of both scripts, for both
+  bash and (when present) PowerShell.
+
+Deliberately not changed: `CLAUDE_STATUSLINE_UPDATE_URL` still has no
+scheme/host allowlist. The security review noted this converts "attacker
+can set your env vars" into "attacker can point the fetch anywhere,"
+but treated it as a documented trust-boundary decision rather than a
+required fix — the override is intentionally available for testing/power
+users, sharing the same "you already control the process's environment"
+trust boundary as `CLAUDE_STATUSLINE_NO_UPDATE` itself, and pinning the
+host would break the file://-based test fixtures above without a
+disproportionate cert-infrastructure investment for a single-user tool.
+
 ## Testing
 
 No existing automated test suite in this repo; verification today is manual,

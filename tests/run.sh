@@ -120,6 +120,99 @@ run_cost_case "clear-resets-display"  '{"sessionId":"sess-A","costBaseline":0}' 
 # After /clear, as the new session accumulates cost: delta is shown
 run_cost_case "post-clear-accumulate" '{"sessionId":"sess-B","costBaseline":1.23}' "$J_B027" '$0.27'
 
+# ── Auto-update contract tests ─────────────────────────────────────────────────
+# Exercise `--update-worker` directly (never the throttle/spawn path — that's
+# just timestamp arithmetic and a real fire-and-forget background process,
+# not worth making async/flaky in CI). Both curl and Invoke-WebRequest accept
+# file:// URIs, so these run fully offline and deterministically. Each case
+# operates on a throwaway copy of the script in its own scratch dir — never
+# the tracked file — because this exact mechanism already overwrote the
+# checked-out statusline.sh once during this feature's own development.
+
+update_test_dir="$(mktemp -d)"
+trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"; rm -rf "$update_test_dir"' EXIT
+
+# file:// URI from an absolute path. mingw curl (Windows/git-bash dev boxes)
+# needs a Windows-style C:/... path in the URI even though bash itself works
+# in POSIX-style /tmp/... paths; cygpath bridges that when present. On real
+# POSIX systems (CI's ubuntu-latest) there is no cygpath and the path is
+# already URI-ready as-is.
+_file_uri() { # abs_path
+  if command -v cygpath >/dev/null 2>&1; then
+    printf 'file:///%s' "$(cygpath -m "$1")"
+  else
+    printf 'file://%s' "$1"
+  fi
+}
+
+_sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+_check_update_case() { # label  dir  copy  before  after  expect(replace|reject)
+  local label="$1" dir="$2" copy="$3" before="$4" after="$5" expect="$6" extra
+  if [ "$expect" = "replace" ] && [ "$after" = "$before" ]; then
+    fail=$((fail+1)); printf 'FAIL [update] %s: expected replace, file unchanged\n' "$label"
+  elif [ "$expect" = "reject" ] && [ "$after" != "$before" ]; then
+    fail=$((fail+1)); printf 'FAIL [update] %s: expected reject, file WAS changed\n' "$label"
+  else
+    pass=$((pass+1))
+  fi
+  extra="$(find "$dir" -mindepth 1 ! -name "$(basename "$copy")" | wc -l)"
+  if [ "$extra" -gt 0 ]; then
+    fail=$((fail+1)); printf 'FAIL [update] %s: leftover temp file(s) in %s\n' "$label" "$dir"
+  fi
+}
+
+run_update_case_sh() { # label  fixture_uri  expect(replace|reject)
+  local label="$1" uri="$2" expect="$3" dir copy before after
+  dir="$(mktemp -d "$update_test_dir/case.XXXXXX")"
+  copy="$dir/statusline.sh"
+  cp "$sh_script" "$copy"
+  before="$(_sha "$copy")"
+  CLAUDE_STATUSLINE_UPDATE_URL="$uri" bash "$copy" --update-worker >/dev/null 2>&1
+  after="$(_sha "$copy")"
+  _check_update_case "sh:$label" "$dir" "$copy" "$before" "$after" "$expect"
+}
+
+run_update_case_ps() { # label  fixture_uri  expect(replace|reject)
+  [ "$have_pwsh" = 1 ] || return 0
+  local label="$1" uri="$2" expect="$3" dir copy before after
+  dir="$(mktemp -d "$update_test_dir/pscase.XXXXXX")"
+  copy="$dir/statusline.ps1"
+  cp "$ps_script" "$copy"
+  before="$(_sha "$copy")"
+  CLAUDE_STATUSLINE_UPDATE_URL="$uri" pwsh -NoProfile -File "$copy" --update-worker >/dev/null 2>&1
+  after="$(_sha "$copy")"
+  _check_update_case "ps:$label" "$dir" "$copy" "$before" "$after" "$expect"
+}
+
+# Fixtures, generated fresh each run so "identical" always matches whatever
+# the tracked scripts currently contain.
+sh_fixture_new="$update_test_dir/new.sh"
+{ printf '#!/usr/bin/env bash\n# FIXTURE-CONTRACT-TEST-NEW-VERSION\n'; printf 'x%.0s' $(seq 1 220); printf '\n'; } > "$sh_fixture_new"
+sh_fixture_garbage="$update_test_dir/garbage.sh"
+printf 'Not Found' > "$sh_fixture_garbage"
+sh_fixture_identical="$update_test_dir/identical.sh"
+cp "$sh_script" "$sh_fixture_identical"
+
+ps_fixture_new="$update_test_dir/new.ps1"
+{ printf '# Claude Code status line (Windows / PowerShell).\n# FIXTURE-CONTRACT-TEST-NEW-VERSION\n'; printf 'x%.0s' $(seq 1 220); printf '\n'; } > "$ps_fixture_new"
+ps_fixture_garbage="$update_test_dir/garbage.ps1"
+printf 'Not Found' > "$ps_fixture_garbage"
+ps_fixture_identical="$update_test_dir/identical.ps1"
+cp "$ps_script" "$ps_fixture_identical"
+
+offline_uri="$(_file_uri "$update_test_dir/does-not-exist-$$.sh")"
+
+run_update_case_sh "replace-on-newer-fixture" "$(_file_uri "$sh_fixture_new")"      "replace"
+run_update_case_sh "noop-on-identical"        "$(_file_uri "$sh_fixture_identical")" "reject"
+run_update_case_sh "reject-garbage-response"  "$(_file_uri "$sh_fixture_garbage")"   "reject"
+run_update_case_sh "reject-unreachable-url"   "$offline_uri"                        "reject"
+
+run_update_case_ps "replace-on-newer-fixture" "$(_file_uri "$ps_fixture_new")"      "replace"
+run_update_case_ps "noop-on-identical"        "$(_file_uri "$ps_fixture_identical")" "reject"
+run_update_case_ps "reject-wrong-header"      "$(_file_uri "$ps_fixture_garbage")"   "reject"
+run_update_case_ps "reject-unreachable-url"   "$offline_uri"                        "reject"
+
 echo "----"
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]

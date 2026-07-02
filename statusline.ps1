@@ -55,18 +55,33 @@ $UpdateStateFile = if ($env:CLAUDE_STATUSLINE_UPDATE_STATE_FILE) {
     "$env:USERPROFILE\.claude\statusline-update-state.json"
 }
 
+# Walk up from $dir looking for a .git entry (dir or file — worktrees use a
+# .git file pointing at the real gitdir). A dev iterating on this code from a
+# checkout should never have it silently self-replace mid-edit -- this is a
+# structural guard, independent of callers remembering CLAUDE_STATUSLINE_NO_UPDATE.
+function Test-InsideGitTree($dir) {
+    while ($dir -and (Test-Path $dir)) {
+        if (Test-Path (Join-Path $dir '.git')) { return $true }
+        $parent = Split-Path -Parent $dir
+        if (-not $parent -or $parent -eq $dir) { break }
+        $dir = $parent
+    }
+    return $false
+}
+
 function Invoke-UpdateWorker {
     if (-not $Self) { return }
     $tmp = $null
     try {
         $url = if ($env:CLAUDE_STATUSLINE_UPDATE_URL) { $env:CLAUDE_STATUSLINE_UPDATE_URL } else { 'https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/v2/statusline.ps1' }
-        $tmp = "$Self.$PID.tmp"
+        $tmp = "$Self.$PID.$(Get-Random).tmp"
         Invoke-WebRequest -Uri $url -OutFile $tmp -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
         $newContent = Get-Content -Raw -Path $tmp -ErrorAction Stop
         # Sanity: non-empty, looks like our script, not a truncated/error
         # response (e.g. a GitHub error page). Guards the deployed file from
-        # ever being observed in a half-written or garbage state.
-        if (-not $newContent -or $newContent.Length -lt 200 -or -not $newContent.TrimStart().StartsWith('#')) {
+        # ever being observed in a half-written or garbage state. Matches the
+        # bash script's shebang-line check rather than a generic '#' prefix.
+        if (-not $newContent -or $newContent.Length -lt 200 -or -not $newContent.TrimStart().StartsWith('# Claude Code status line')) {
             Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
             return
         }
@@ -82,15 +97,24 @@ function Invoke-UpdateWorker {
 }
 
 function Invoke-ScheduleUpdateIfDue($nowEpoch) {
-    if ($env:CLAUDE_STATUSLINE_NO_UPDATE) { return }
-    if (-not $Self) { return }
-    $interval = if ($env:CLAUDE_STATUSLINE_UPDATE_INTERVAL) { [int]$env:CLAUDE_STATUSLINE_UPDATE_INTERVAL } else { 86400 }
-    $last = 0
-    if (Test-Path $UpdateStateFile) {
-        try { $last = [int64]((Get-Content -Raw -Path $UpdateStateFile | ConvertFrom-Json).lastCheck) } catch { $last = 0 }
-    }
-    if (($nowEpoch - $last) -lt $interval) { return }
+    # Whole body wrapped in try/catch: this must never throw an uncaught
+    # terminating exception (e.g. from a malformed CLAUDE_STATUSLINE_UPDATE_INTERVAL
+    # override) and change the process's exit code/stderr behavior — it runs
+    # after the real status line has already been written to stdout.
     try {
+        if ($env:CLAUDE_STATUSLINE_NO_UPDATE) { return }
+        if (-not $Self) { return }
+        $interval = 86400
+        $parsedInterval = 0
+        if ($env:CLAUDE_STATUSLINE_UPDATE_INTERVAL -and [int]::TryParse($env:CLAUDE_STATUSLINE_UPDATE_INTERVAL, [ref]$parsedInterval)) {
+            $interval = $parsedInterval
+        }
+        $last = 0
+        if (Test-Path $UpdateStateFile) {
+            try { $last = [int64]((Get-Content -Raw -Path $UpdateStateFile | ConvertFrom-Json).lastCheck) } catch { $last = 0 }
+        }
+        if (($nowEpoch - $last) -lt $interval) { return }
+        if (Test-InsideGitTree (Split-Path -Parent $Self)) { return }
         [ordered]@{ lastCheck = $nowEpoch } | ConvertTo-Json -Compress | Set-Content $UpdateStateFile -Encoding UTF8
         Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', $Self, '--update-worker') -WindowStyle Hidden -ErrorAction Stop | Out-Null
     } catch {}
