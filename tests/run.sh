@@ -123,14 +123,22 @@ run_cost_case "post-clear-accumulate" '{"sessionId":"sess-B","costBaseline":1.23
 # ── Auto-update contract tests ─────────────────────────────────────────────────
 # Exercise `--update-worker` directly (never the throttle/spawn path — that's
 # just timestamp arithmetic and a real fire-and-forget background process,
-# not worth making async/flaky in CI). Both curl and Invoke-WebRequest accept
-# file:// URIs, so these run fully offline and deterministically. Each case
-# operates on a throwaway copy of the script in its own scratch dir — never
-# the tracked file — because this exact mechanism already overwrote the
-# checked-out statusline.sh once during this feature's own development.
+# not worth making async/flaky in CI). curl accepts file:// URIs directly
+# (confirmed working, including in CI), but pwsh's Invoke-WebRequest on Linux
+# does NOT support file:// at all -- every fetch attempt fails at the
+# protocol level, which would make every "reject" case here pass vacuously
+# regardless of whether the sanity-check logic being tested is even correct.
+# So: bash cases use file://; PowerShell cases spin up a real local HTTP
+# server (python3, present on GitHub's ubuntu-latest runners) and are
+# skipped with a notice if python3 isn't available, same graceful-degrade
+# pattern as have_pwsh above. Each case operates on a throwaway copy of the
+# script in its own scratch dir — never the tracked file — because this
+# exact mechanism already overwrote the checked-out statusline.sh once
+# during this feature's own development.
 
 update_test_dir="$(mktemp -d)"
-trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"; rm -rf "$update_test_dir"' EXIT
+_http_server_pid=""
+trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"; [ -n "$_http_server_pid" ] && kill "$_http_server_pid" 2>/dev/null; rm -rf "$update_test_dir"' EXIT
 
 # file:// URI from an absolute path. mingw curl (Windows/git-bash dev boxes)
 # needs a Windows-style C:/... path in the URI even though bash itself works
@@ -144,6 +152,21 @@ _file_uri() { # abs_path
     printf 'file://%s' "$1"
   fi
 }
+
+_http_port=""
+if [ "$have_pwsh" = 1 ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    _http_port=8934
+    ( cd "$update_test_dir" && exec python3 -m http.server "$_http_port" --bind 127.0.0.1 >/dev/null 2>&1 ) &
+    _http_server_pid=$!
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      curl -fsS "http://127.0.0.1:$_http_port/" >/dev/null 2>&1 && break
+      sleep 0.2
+    done
+  else
+    echo "note: python3 not found — skipping PowerShell auto-update fetch tests"
+  fi
+fi
 
 _sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
@@ -173,9 +196,14 @@ run_update_case_sh() { # label  fixture_uri  expect(replace|reject)
   _check_update_case "sh:$label" "$dir" "$copy" "$before" "$after" "$expect"
 }
 
-run_update_case_ps() { # label  fixture_uri  expect(replace|reject)
-  [ "$have_pwsh" = 1 ] || return 0
-  local label="$1" uri="$2" expect="$3" dir copy before after
+run_update_case_ps() { # label  fixture_relpath_under_update_test_dir|unreachable  expect(replace|reject)
+  [ "$have_pwsh" = 1 ] && [ -n "$_http_port" ] || return 0
+  local label="$1" relpath="$2" expect="$3" dir copy before after uri
+  if [ "$relpath" = "unreachable" ]; then
+    uri="http://127.0.0.1:1/nope"   # port 1: nothing listens, connection refused
+  else
+    uri="http://127.0.0.1:$_http_port/$relpath"
+  fi
   dir="$(mktemp -d "$update_test_dir/pscase.XXXXXX")"
   copy="$dir/statusline.ps1"
   cp "$ps_script" "$copy"
@@ -208,10 +236,10 @@ run_update_case_sh "noop-on-identical"        "$(_file_uri "$sh_fixture_identica
 run_update_case_sh "reject-garbage-response"  "$(_file_uri "$sh_fixture_garbage")"   "reject"
 run_update_case_sh "reject-unreachable-url"   "$offline_uri"                        "reject"
 
-run_update_case_ps "replace-on-newer-fixture" "$(_file_uri "$ps_fixture_new")"      "replace"
-run_update_case_ps "noop-on-identical"        "$(_file_uri "$ps_fixture_identical")" "reject"
-run_update_case_ps "reject-wrong-header"      "$(_file_uri "$ps_fixture_garbage")"   "reject"
-run_update_case_ps "reject-unreachable-url"   "$offline_uri"                        "reject"
+run_update_case_ps "replace-on-newer-fixture" "new.ps1"       "replace"
+run_update_case_ps "noop-on-identical"        "identical.ps1" "reject"
+run_update_case_ps "reject-wrong-header"      "garbage.ps1"   "reject"
+run_update_case_ps "reject-unreachable-url"   "unreachable"   "reject"
 
 echo "----"
 echo "pass=$pass fail=$fail"
