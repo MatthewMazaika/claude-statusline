@@ -39,6 +39,63 @@ function Write-CostState($sid, $baseline) {
     } catch {}
 }
 
+# ── Auto-update state ────────────────────────────────────────────────────────
+# Silent, throttled, self-contained: no installer/cron/hook changes. At most
+# once per CLAUDE_STATUSLINE_UPDATE_INTERVAL (default 24h), a normal
+# invocation spawns a fully detached re-invocation of this same file with
+# --update-worker, which fetches the latest v2 script and atomically replaces
+# it if different. Mirrors the cost-state file's directory-adjacent,
+# env-override-able placement above.
+$Self = $PSCommandPath
+$UpdateStateFile = if ($env:CLAUDE_STATUSLINE_UPDATE_STATE_FILE) {
+    $env:CLAUDE_STATUSLINE_UPDATE_STATE_FILE
+} elseif ($Self) {
+    Join-Path (Split-Path -Parent $Self) 'statusline-update-state.json'
+} else {
+    "$env:USERPROFILE\.claude\statusline-update-state.json"
+}
+
+function Invoke-UpdateWorker {
+    if (-not $Self) { return }
+    $tmp = $null
+    try {
+        $url = if ($env:CLAUDE_STATUSLINE_UPDATE_URL) { $env:CLAUDE_STATUSLINE_UPDATE_URL } else { 'https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/v2/statusline.ps1' }
+        $tmp = "$Self.$PID.tmp"
+        Invoke-WebRequest -Uri $url -OutFile $tmp -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
+        $newContent = Get-Content -Raw -Path $tmp -ErrorAction Stop
+        # Sanity: non-empty, looks like our script, not a truncated/error
+        # response (e.g. a GitHub error page). Guards the deployed file from
+        # ever being observed in a half-written or garbage state.
+        if (-not $newContent -or $newContent.Length -lt 200 -or -not $newContent.TrimStart().StartsWith('#')) {
+            Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+            return
+        }
+        $current = if (Test-Path $Self) { Get-Content -Raw -Path $Self } else { '' }
+        if ($newContent -eq $current) {
+            Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+        } else {
+            Move-Item -Path $tmp -Destination $Self -Force
+        }
+    } catch {
+        if ($tmp) { Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+function Invoke-ScheduleUpdateIfDue($nowEpoch) {
+    if ($env:CLAUDE_STATUSLINE_NO_UPDATE) { return }
+    if (-not $Self) { return }
+    $interval = if ($env:CLAUDE_STATUSLINE_UPDATE_INTERVAL) { [int]$env:CLAUDE_STATUSLINE_UPDATE_INTERVAL } else { 86400 }
+    $last = 0
+    if (Test-Path $UpdateStateFile) {
+        try { $last = [int64]((Get-Content -Raw -Path $UpdateStateFile | ConvertFrom-Json).lastCheck) } catch { $last = 0 }
+    }
+    if (($nowEpoch - $last) -lt $interval) { return }
+    try {
+        [ordered]@{ lastCheck = $nowEpoch } | ConvertTo-Json -Compress | Set-Content $UpdateStateFile -Encoding UTF8
+        Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', $Self, '--update-worker') -WindowStyle Hidden -ErrorAction Stop | Out-Null
+    } catch {}
+}
+
 # token formatter (round half away from zero for cross-platform parity)
 function Format-Tokens($n) {
     $v = [double]$n
@@ -167,6 +224,16 @@ if ($args -contains '--demo' -or $args -contains '-demo') {
     return
 }
 
+if ($args -contains '--update-worker') {
+    Invoke-UpdateWorker
+    return
+}
+
+# now (epoch seconds): test override or real UTC. Resolved once, outside the
+# try/catch below, so a malformed-input error still leaves it set for the
+# auto-update throttle check at the bottom.
+$nowEpoch = if ($env:CLAUDE_STATUSLINE_NOW) { [int64]$env:CLAUDE_STATUSLINE_NOW } else { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+
 try {
     $raw = [Console]::In.ReadToEnd()
     if (-not $raw.Trim()) { return }
@@ -186,14 +253,9 @@ try {
         $obj.cost.total_cost_usd = [math]::Max(0.0, $rawCost - $baseline)
     }
 
-    # now (epoch seconds): test override or real UTC
-    if ($env:CLAUDE_STATUSLINE_NOW) {
-        $nowEpoch = [int64]$env:CLAUDE_STATUSLINE_NOW
-    } else {
-        $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    }
-
     Write-Output (Render-Status $obj $nowEpoch)
 } catch {
     Write-Output "statusline err: $($_.Exception.Message)"
 }
+
+Invoke-ScheduleUpdateIfDue $nowEpoch

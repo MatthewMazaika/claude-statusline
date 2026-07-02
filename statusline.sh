@@ -22,6 +22,57 @@ _write_state() { # sid baseline
     > "$_state_file" 2>/dev/null || true
 }
 
+# ── Auto-update state ──────────────────────────────────────────────────────────
+# Silent, throttled, self-contained: no installer/cron/hook changes. At most
+# once per CLAUDE_STATUSLINE_UPDATE_INTERVAL (default 24h), a normal
+# invocation spawns a fully detached re-invocation of this same file with
+# --update-worker, which fetches the latest v2 script and atomically replaces
+# it if different. Mirrors the cost-state file's directory-adjacent,
+# env-override-able placement above.
+_script_abs="${_dir:+$_dir/$(basename "$_script")}"
+_script_abs="${_script_abs:-$_script}"
+_update_state_file="${CLAUDE_STATUSLINE_UPDATE_STATE_FILE:-${_dir:+$_dir/statusline-update-state.json}}"
+_update_state_file="${_update_state_file:-$HOME/.claude/statusline-update-state.json}"
+
+update_worker() {
+  local url tmp
+  [ -z "$_script_abs" ] && return 0
+  url="${CLAUDE_STATUSLINE_UPDATE_URL:-https://raw.githubusercontent.com/MatthewMazaika/claude-statusline/v2/statusline.sh}"
+  tmp="$(mktemp "${_script_abs}.XXXXXX" 2>/dev/null)" || return 0
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --max-time 10 "$url" -o "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -T 10 -O "$tmp" "$url" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  else
+    rm -f "$tmp"; return 0
+  fi
+  # Sanity: non-empty, looks like our script, not a truncated/error response
+  # (e.g. a GitHub error page). Guards the deployed file from ever being
+  # observed in a half-written or garbage state.
+  if [ ! -s "$tmp" ] || [ "$(wc -c < "$tmp")" -lt 200 ] || ! head -n1 "$tmp" | grep -q '^#!/usr/bin/env bash'; then
+    rm -f "$tmp"; return 0
+  fi
+  if cmp -s "$tmp" "$_script_abs" 2>/dev/null; then
+    rm -f "$tmp"   # already current
+  else
+    chmod +x "$tmp" 2>/dev/null
+    mv -f "$tmp" "$_script_abs" 2>/dev/null || rm -f "$tmp"
+  fi
+}
+
+maybe_schedule_update() { # $1 = now (epoch seconds)
+  [ -n "${CLAUDE_STATUSLINE_NO_UPDATE:-}" ] && return 0
+  [ -z "$_script_abs" ] && return 0
+  local interval last
+  interval="${CLAUDE_STATUSLINE_UPDATE_INTERVAL:-86400}"
+  last="$(jq -r '.lastCheck // 0' "$_update_state_file" 2>/dev/null || printf '0')"
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ $(( $1 - last )) -lt "$interval" ] && return 0
+  printf '{"lastCheck":%s}\n' "$1" > "$_update_state_file" 2>/dev/null
+  bash "$_script_abs" --update-worker </dev/null >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+}
+
 # jq program kept in a variable so --demo can drive the real renderer with
 # synthetic payloads — the examples can never drift from live output.
 PROG='
@@ -138,6 +189,11 @@ if [ "${1:-}" = "--demo" ]; then
   exit 0
 fi
 
+if [ "${1:-}" = "--update-worker" ]; then
+  update_worker
+  exit 0
+fi
+
 raw="$(cat)"
 [ -z "${raw//[$' \t\r\n']/}" ] && exit 0
 now="${CLAUDE_STATUSLINE_NOW:-$(date +%s)}"
@@ -161,3 +217,5 @@ if [ -n "$_rawcost" ]; then
 fi
 
 printf '%s' "$raw" | render "$now"
+
+maybe_schedule_update "$now"
