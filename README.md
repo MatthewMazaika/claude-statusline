@@ -109,21 +109,27 @@ pwsh ~/.claude/statusline.ps1 --demo
 
 ## Update
 
-Cloned? Pull and re-run the installer.
+The installed script updates itself. At most once every 24 hours, it checks in the background
+(after rendering — never adding delay) whether a newer `v2.x` release exists, and silently
+replaces itself if so. No prompts, no manual step, works the same whether you installed via the
+one-liner or a clone.
+
+To opt out and manage updates yourself, set `CLAUDE_STATUSLINE_NO_UPDATE=1` in your environment.
+You can still update immediately at any time:
 
 Linux / macOS
 
 ```bash
-git pull && bash install.sh
+git pull && bash install.sh          # if cloned
+bash ~/.claude/statusline.sh --update-worker   # or just wait for the next auto-check
 ```
 
 Windows (PowerShell)
 
 ```powershell
-git pull; .\install.ps1
+git pull; .\install.ps1                        # if cloned
+powershell ~/.claude/statusline.ps1 --update-worker   # or just wait for the next auto-check
 ```
-
-Used the one-liner? Just run it again.
 
 ## Format reference
 

@@ -17,6 +17,13 @@ export CLAUDE_STATUSLINE_STATE_FILE
 CLAUDE_STATUSLINE_STATE_FILE="$(mktemp)"
 trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"' EXIT
 
+# Disable auto-update: these scripts run straight from the repo checkout, and
+# several cases below don't pin CLAUDE_STATUSLINE_NOW (real wall-clock "now"
+# with no prior state file reads as "due"). Without this, a test run can spawn
+# a real background fetch that overwrites the checked-out statusline.sh/.ps1
+# with whatever is currently published at the v2 tag.
+export CLAUDE_STATUSLINE_NO_UPDATE=1
+
 have_pwsh=0
 if command -v pwsh >/dev/null 2>&1; then
   have_pwsh=1
@@ -112,6 +119,127 @@ run_cost_case "within-session"        '{"sessionId":"sess-A","costBaseline":0}' 
 run_cost_case "clear-resets-display"  '{"sessionId":"sess-A","costBaseline":0}'    "$J_B000" ''
 # After /clear, as the new session accumulates cost: delta is shown
 run_cost_case "post-clear-accumulate" '{"sessionId":"sess-B","costBaseline":1.23}' "$J_B027" '$0.27'
+
+# ── Auto-update contract tests ─────────────────────────────────────────────────
+# Exercise `--update-worker` directly (never the throttle/spawn path — that's
+# just timestamp arithmetic and a real fire-and-forget background process,
+# not worth making async/flaky in CI). curl accepts file:// URIs directly
+# (confirmed working, including in CI), but pwsh's Invoke-WebRequest on Linux
+# does NOT support file:// at all -- every fetch attempt fails at the
+# protocol level, which would make every "reject" case here pass vacuously
+# regardless of whether the sanity-check logic being tested is even correct.
+# So: bash cases use file://; PowerShell cases spin up a real local HTTP
+# server (python3, present on GitHub's ubuntu-latest runners) and are
+# skipped with a notice if python3 isn't available, same graceful-degrade
+# pattern as have_pwsh above. Each case operates on a throwaway copy of the
+# script in its own scratch dir — never the tracked file — because this
+# exact mechanism already overwrote the checked-out statusline.sh once
+# during this feature's own development.
+
+update_test_dir="$(mktemp -d)"
+_http_server_pid=""
+trap 'rm -f "$CLAUDE_STATUSLINE_STATE_FILE"; [ -n "$_http_server_pid" ] && kill "$_http_server_pid" 2>/dev/null; rm -rf "$update_test_dir"' EXIT
+
+# file:// URI from an absolute path. mingw curl (Windows/git-bash dev boxes)
+# needs a Windows-style C:/... path in the URI even though bash itself works
+# in POSIX-style /tmp/... paths; cygpath bridges that when present. On real
+# POSIX systems (CI's ubuntu-latest) there is no cygpath and the path is
+# already URI-ready as-is.
+_file_uri() { # abs_path
+  if command -v cygpath >/dev/null 2>&1; then
+    printf 'file:///%s' "$(cygpath -m "$1")"
+  else
+    printf 'file://%s' "$1"
+  fi
+}
+
+_http_port=""
+if [ "$have_pwsh" = 1 ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    _http_port=8934
+    ( cd "$update_test_dir" && exec python3 -m http.server "$_http_port" --bind 127.0.0.1 >/dev/null 2>&1 ) &
+    _http_server_pid=$!
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      curl -fsS "http://127.0.0.1:$_http_port/" >/dev/null 2>&1 && break
+      sleep 0.2
+    done
+  else
+    echo "note: python3 not found — skipping PowerShell auto-update fetch tests"
+  fi
+fi
+
+_sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+_check_update_case() { # label  dir  copy  before  after  expect(replace|reject)
+  local label="$1" dir="$2" copy="$3" before="$4" after="$5" expect="$6" extra
+  if [ "$expect" = "replace" ] && [ "$after" = "$before" ]; then
+    fail=$((fail+1)); printf 'FAIL [update] %s: expected replace, file unchanged\n' "$label"
+  elif [ "$expect" = "reject" ] && [ "$after" != "$before" ]; then
+    fail=$((fail+1)); printf 'FAIL [update] %s: expected reject, file WAS changed\n' "$label"
+  else
+    pass=$((pass+1))
+  fi
+  extra="$(find "$dir" -mindepth 1 ! -name "$(basename "$copy")" | wc -l)"
+  if [ "$extra" -gt 0 ]; then
+    fail=$((fail+1)); printf 'FAIL [update] %s: leftover temp file(s) in %s\n' "$label" "$dir"
+  fi
+}
+
+run_update_case_sh() { # label  fixture_uri  expect(replace|reject)
+  local label="$1" uri="$2" expect="$3" dir copy before after
+  dir="$(mktemp -d "$update_test_dir/case.XXXXXX")"
+  copy="$dir/statusline.sh"
+  cp "$sh_script" "$copy"
+  before="$(_sha "$copy")"
+  CLAUDE_STATUSLINE_UPDATE_URL="$uri" bash "$copy" --update-worker >/dev/null 2>&1
+  after="$(_sha "$copy")"
+  _check_update_case "sh:$label" "$dir" "$copy" "$before" "$after" "$expect"
+}
+
+run_update_case_ps() { # label  fixture_relpath_under_update_test_dir|unreachable  expect(replace|reject)
+  [ "$have_pwsh" = 1 ] && [ -n "$_http_port" ] || return 0
+  local label="$1" relpath="$2" expect="$3" dir copy before after uri
+  if [ "$relpath" = "unreachable" ]; then
+    uri="http://127.0.0.1:1/nope"   # port 1: nothing listens, connection refused
+  else
+    uri="http://127.0.0.1:$_http_port/$relpath"
+  fi
+  dir="$(mktemp -d "$update_test_dir/pscase.XXXXXX")"
+  copy="$dir/statusline.ps1"
+  cp "$ps_script" "$copy"
+  before="$(_sha "$copy")"
+  CLAUDE_STATUSLINE_UPDATE_URL="$uri" pwsh -NoProfile -File "$copy" --update-worker >/dev/null 2>&1
+  after="$(_sha "$copy")"
+  _check_update_case "ps:$label" "$dir" "$copy" "$before" "$after" "$expect"
+}
+
+# Fixtures, generated fresh each run so "identical" always matches whatever
+# the tracked scripts currently contain.
+sh_fixture_new="$update_test_dir/new.sh"
+{ printf '#!/usr/bin/env bash\n# FIXTURE-CONTRACT-TEST-NEW-VERSION\n'; printf 'x%.0s' $(seq 1 220); printf '\n'; } > "$sh_fixture_new"
+sh_fixture_garbage="$update_test_dir/garbage.sh"
+printf 'Not Found' > "$sh_fixture_garbage"
+sh_fixture_identical="$update_test_dir/identical.sh"
+cp "$sh_script" "$sh_fixture_identical"
+
+ps_fixture_new="$update_test_dir/new.ps1"
+{ printf '# Claude Code status line (Windows / PowerShell).\n# FIXTURE-CONTRACT-TEST-NEW-VERSION\n'; printf 'x%.0s' $(seq 1 220); printf '\n'; } > "$ps_fixture_new"
+ps_fixture_garbage="$update_test_dir/garbage.ps1"
+printf 'Not Found' > "$ps_fixture_garbage"
+ps_fixture_identical="$update_test_dir/identical.ps1"
+cp "$ps_script" "$ps_fixture_identical"
+
+offline_uri="$(_file_uri "$update_test_dir/does-not-exist-$$.sh")"
+
+run_update_case_sh "replace-on-newer-fixture" "$(_file_uri "$sh_fixture_new")"      "replace"
+run_update_case_sh "noop-on-identical"        "$(_file_uri "$sh_fixture_identical")" "reject"
+run_update_case_sh "reject-garbage-response"  "$(_file_uri "$sh_fixture_garbage")"   "reject"
+run_update_case_sh "reject-unreachable-url"   "$offline_uri"                        "reject"
+
+run_update_case_ps "replace-on-newer-fixture" "new.ps1"       "replace"
+run_update_case_ps "noop-on-identical"        "identical.ps1" "reject"
+run_update_case_ps "reject-wrong-header"      "garbage.ps1"   "reject"
+run_update_case_ps "reject-unreachable-url"   "unreachable"   "reject"
 
 echo "----"
 echo "pass=$pass fail=$fail"
